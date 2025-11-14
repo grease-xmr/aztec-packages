@@ -1,6 +1,7 @@
 import { Fr } from '@aztec/foundation/fields';
 import { encodeArguments } from '@aztec/stdlib/abi';
 import { PublicSimulatorConfig } from '@aztec/stdlib/avm';
+import { PublicSimulatorConfig } from '@aztec/stdlib/avm';
 import type { AztecAddress } from '@aztec/stdlib/aztec-address';
 import { GasFees } from '@aztec/stdlib/gas';
 import type { MerkleTreeWriteOperations } from '@aztec/stdlib/interfaces/server';
@@ -86,7 +87,6 @@ export class AvmSimulationTester extends BaseAvmSimulationTester {
       collectDebugLogs: true,
       collectHints: false,
       collectStatistics: false,
-      collectCallMetadata: true,
     });
     const environment = initExecutionEnvironment({
       calldata,
@@ -94,6 +94,7 @@ export class AvmSimulationTester extends BaseAvmSimulationTester {
       address,
       sender,
       isStaticCall,
+      config,
       config,
     });
     const persistableState = await this.stateManager.fork();

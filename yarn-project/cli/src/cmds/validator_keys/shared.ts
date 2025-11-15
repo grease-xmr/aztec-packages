@@ -32,23 +32,10 @@ export type BuildValidatorsInput = {
 };
 
 export function withValidatorIndex(path: string, accountIndex: number = 0, addressIndex: number = 0) {
-  // NOTE: The legacy BLS CLI is to allow users who generated keys in 2.1.4 to be able to use the same command
-  // to re-generate their keys. In 2.1.5 we switched how we append addresses to the path so this is to maintain backwards compatibility.
-  const useLegacyBlsCli = ['true', '1', 'yes', 'y'].includes(process.env.LEGACY_BLS_CLI ?? '');
-
-  const defaultBlsPathParts = defaultBlsPath.split('/');
-
   const parts = path.split('/');
-  if (parts.length == defaultBlsPathParts.length && parts.every((part, index) => part === defaultBlsPathParts[index])) {
-    if (useLegacyBlsCli) {
-      // In 2.1.4, we were using address-index in parts[3] and did NOT use account-index, check lines 32 & 84
-      // https://github.com/AztecProtocol/aztec-packages/blob/v2.1.4/yarn-project/cli/src/cmds/validator_keys/shared.ts
-
-      parts[3] = String(addressIndex);
-    } else {
-      parts[3] = String(accountIndex);
-      parts[5] = String(addressIndex);
-    }
+  if (parts.length == 6 && parts[0] === 'm' && parts[1] === '12381' && parts[2] === '3600') {
+    parts[3] = String(accountIndex);
+    parts[5] = String(addressIndex);
     return parts.join('/');
   }
   return path;
@@ -96,6 +83,7 @@ export async function buildValidatorEntries(input: BuildValidatorsInput) {
     Array.from({ length: validatorCount }, async (_unused, i) => {
       const addressIndex = baseAddressIndex + i;
       const basePath = blsPath ?? defaultBlsPath;
+      const perValidatorPath = withValidatorIndex(basePath, accountIndex, addressIndex);
       const perValidatorPath = withValidatorIndex(basePath, accountIndex, addressIndex);
 
       const blsPrivKey = ikm || mnemonic ? deriveBlsPrivateKey(mnemonic, ikm, perValidatorPath) : undefined;

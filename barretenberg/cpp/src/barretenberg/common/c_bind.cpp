@@ -80,3 +80,12 @@ WASM_EXPORT void test_stdout_stderr()
     std::cout << "c++: hello stdout!" << std::flush;
     std::cerr << "c++: hello stderr!";
 }
+
+/**
+* Aligned de-allocation function for WASM bindings. When calling functions from Rust, we need to ensure that
+* memory allocated in function calls is also de-allocated in using the same allocator to avoid undefined behavior.
+*/
+extern "C" void bbapi_free_result(void* p)
+{
+    aligned_free(p);
+}

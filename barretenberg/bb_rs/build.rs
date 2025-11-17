@@ -237,6 +237,7 @@ fn main() {
     let bindings = builder
         // The input header we would like to generate bindings for.
         .header_contents("wrapper.hpp", include_str!("./wrapper.hpp"))
+        .allowlist_function("bbapi_free_result")
         .allowlist_function("pedersen_commit")
         .allowlist_function("pedersen_hash")
         .allowlist_function("pedersen_hashes")

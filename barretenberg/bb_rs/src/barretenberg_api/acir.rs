@@ -1,6 +1,5 @@
 use super::{bindgen, models::Ptr, traits::SerializeBuffer, Buffer};
 use std::ptr;
-use std::fmt::Write;
 use std::env;
 use num_bigint::BigUint;
 
@@ -45,14 +44,12 @@ fn from_biguints_to_hex_strings(biguints: &[BigUint]) -> Vec<String> {
     biguints.iter().map(|biguint| format!("0x{:064x}", biguint)).collect()
 }
 
-pub unsafe fn get_circuit_sizes(constraint_system_buf: &[u8], recursive: bool) -> CircuitSizes {
-    let mut total = 0;
-    let mut subgroup = 0;
-    let honk_recursion = true;
+pub unsafe fn get_circuit_sizes(constraint_system_buf: &[u8], has_ipa_claim: bool) -> CircuitSizes {
+    let mut total: u32 = 0;
+    let mut subgroup: u32 = 0;
     bindgen::acir_get_circuit_sizes(
         constraint_system_buf.to_buffer().as_slice().as_ptr(),
-        &recursive,
-        &honk_recursion,
+        &has_ipa_claim,
         &mut total,
         &mut subgroup,
     );
@@ -73,7 +70,7 @@ pub unsafe fn acir_prove_ultra_honk(
     acir_set_storage_budget(max_storage_usage.unwrap_or(0));
 
     let mut out_ptr = ptr::null_mut();
-    bindgen::acir_prove_ultra_zk_honk(
+    bindgen::acir_prove_ultra_honk(
         constraint_system_buf.to_buffer().as_slice().as_ptr(),
         witness_buf.to_buffer().as_slice().as_ptr(),
         vkey_buf.as_ptr(),
@@ -199,7 +196,7 @@ pub unsafe fn acir_get_ultra_honk_keccak_zk_verification_key(constraint_system_b
 
 pub unsafe fn acir_verify_ultra_honk(proof_buf: &[u8], vkey_buf: &[u8]) -> bool {
     let mut result = false;
-    bindgen::acir_verify_ultra_zk_honk(
+    bindgen::acir_verify_ultra_honk(
         proof_buf.to_buffer().as_ptr(),
         vkey_buf.as_ptr(),
         &mut result,

@@ -380,6 +380,7 @@ export class TXEOracleTopLevelContext implements IMiscOracle, ITxeExecutionOracl
       collectDebugLogs: true,
       collectHints: false,
       collectStatistics: false,
+      collectCallMetadata: true,
     });
     const processor = new PublicProcessor(
       globals,
@@ -498,6 +499,7 @@ export class TXEOracleTopLevelContext implements IMiscOracle, ITxeExecutionOracl
       collectDebugLogs: true,
       collectHints: false,
       collectStatistics: false,
+      collectCallMetadata: true,
     });
     const simulator = new PublicTxSimulator(guardedMerkleTrees, contractsDB, globals, config);
     const simulator = new PublicTxSimulator(guardedMerkleTrees, contractsDB, globals, config);

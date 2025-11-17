@@ -1120,7 +1120,7 @@ export class PublicSimulatorConfig {
   constructor(
     public readonly proverId: Fr,
     public readonly skipFeeEnforcement: boolean,
-    public readonly collectCallMetadata: boolean, // processedPhases.
+    public readonly collectCallMetadata: boolean, // appLogicReturnValues.
     public readonly collectHints: boolean, // hints.
     public readonly collectDebugLogs: boolean, // logs.
     public readonly maxDebugLogMemoryReads: number,

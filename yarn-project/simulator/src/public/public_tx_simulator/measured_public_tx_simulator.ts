@@ -1,6 +1,6 @@
 import type { Fr } from '@aztec/foundation/fields';
 import { Timer } from '@aztec/foundation/timer';
-import type { ProcessedPhase, PublicSimulatorConfig, PublicTxResult } from '@aztec/stdlib/avm';
+import type { PublicSimulatorConfig, PublicTxResult } from '@aztec/stdlib/avm';
 import type { Gas } from '@aztec/stdlib/gas';
 import type { AvmSimulationStats } from '@aztec/stdlib/stats';
 import type { MerkleTreeWriteOperations } from '@aztec/stdlib/trees';

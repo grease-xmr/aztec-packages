@@ -87,6 +87,7 @@ export class AvmSimulationTester extends BaseAvmSimulationTester {
       collectDebugLogs: true,
       collectHints: false,
       collectStatistics: false,
+      collectCallMetadata: true,
     });
     const environment = initExecutionEnvironment({
       calldata,

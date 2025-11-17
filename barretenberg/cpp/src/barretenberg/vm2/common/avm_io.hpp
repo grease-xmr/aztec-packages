@@ -480,11 +480,12 @@ struct TxSimulationResult {
     // Simulation.
     GasUsed gas_used;
     RevertCode revert_code;
-    std::optional<DummyStructure> revert_reason;
-    // These are only guaranteed to be present if the simulator is configured to collect them.
-    // TODO(fcarreiro): Sort these out.
-    std::optional<std::vector<DummyStructure>> processed_phases;
-    std::optional<std::vector<FF>> app_logic_return_value;
+    std::optional<SimulationError> revert_reason;
+    // The following fields are only guaranteed to be present if the simulator is configured to collect them.
+    // NOTE: This vector will be populated with one CallStackMetadata per app logic enqueued call.
+    // IMPORTANT: The nesting will only be 1 level deep! You will get one result per enqueued call
+    // but no information about nested calls. This can be added later.
+    std::vector<CallStackMetadata> app_logic_return_values;
     std::optional<std::vector<DebugLog>> logs;
     // Proving request data.
     PublicInputs public_inputs;

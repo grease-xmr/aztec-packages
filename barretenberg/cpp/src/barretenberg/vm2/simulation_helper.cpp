@@ -435,7 +435,6 @@ TxSimulationResult AvmSimulationHelper::simulate_fast(ContractDBInterface& raw_c
                              field_gt,
                              poseidon2,
                              tx_event_emitter,
-                             config.skip_fee_enforcement,
                              config.collect_call_metadata);
 
     PublicInputsBuilder public_inputs_builder;
@@ -457,9 +456,11 @@ TxSimulationResult AvmSimulationHelper::simulate_fast(ContractDBInterface& raw_c
         .gas_used = tx_execution_result.gas_used,
         .revert_code = tx_execution_result.revert_code,
         .app_logic_return_values = std::move(tx_execution_result.app_logic_return_values),
+        .app_logic_return_values = std::move(tx_execution_result.app_logic_return_values),
         .logs = debug_log_component->dump_logs(),
         // Proving request data.
         .public_inputs = public_inputs_builder.build(),
+        .hints = std::nullopt, // NOTE: hints are injected by the caller.
         .hints = std::nullopt, // NOTE: hints are injected by the caller.
     };
 }

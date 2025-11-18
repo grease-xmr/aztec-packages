@@ -1,6 +1,7 @@
 #!/bin/bash
 
 cd ../cpp || exit
+rm -fr .cache
 rm -fr build
 PRESET=clang20
 export DISABLE_AZTEC_VM=0

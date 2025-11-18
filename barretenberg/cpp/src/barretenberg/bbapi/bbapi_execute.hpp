@@ -153,4 +153,22 @@ inline CommandResponse execute(BBApiRequest& request, Command&& command)
 // generate TypeScript bindings for the API.
 std::string get_msgpack_schema_as_json();
 
+/// Returns true if the command is a Chonk command. Specifically, one that requires
+/// special handling of the global BBApiRequest state.
+inline bool is_chonk_command(const Command& command)
+{
+    return command.visit([](const auto& cmd) -> bool {
+        using CmdType = std::decay_t<decltype(cmd)>;
+        return std::is_same_v<CmdType, ChonkComputeStandaloneVk> ||
+               std::is_same_v<CmdType, ChonkComputeIvcVk> ||
+               std::is_same_v<CmdType, ChonkStart> ||
+               std::is_same_v<CmdType, ChonkLoad> ||
+               std::is_same_v<CmdType, ChonkAccumulate> ||
+               std::is_same_v<CmdType, ChonkProve> ||
+               std::is_same_v<CmdType, ChonkVerify> ||
+               std::is_same_v<CmdType, ChonkCheckPrecomputedVk> ||
+               std::is_same_v<CmdType, ChonkStats>;
+    });
+}
+
 } // namespace bb::bbapi

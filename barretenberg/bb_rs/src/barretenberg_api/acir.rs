@@ -1,7 +1,7 @@
 use super::{bindgen, models::Ptr, traits::SerializeBuffer, Buffer};
-use std::ptr;
-use std::env;
 use num_bigint::BigUint;
+use std::env;
+use std::ptr;
 
 #[derive(Debug)]
 pub struct CircuitSizes {
@@ -11,7 +11,10 @@ pub struct CircuitSizes {
 
 fn pack_proof_into_biguints(vec_u8: &[u8]) -> Vec<BigUint> {
     // We process the vector in chunks of 32 bytes
-    vec_u8.chunks(32).map(|chunk| BigUint::from_bytes_be(chunk)).collect()
+    vec_u8
+        .chunks(32)
+        .map(|chunk| BigUint::from_bytes_be(chunk))
+        .collect()
 }
 
 // TODO: Enable this once we know how to format the vk as fields
@@ -41,22 +44,31 @@ fn pack_proof_into_biguints(vec_u8: &[u8]) -> Vec<BigUint> {
 }*/
 
 fn from_biguints_to_hex_strings(biguints: &[BigUint]) -> Vec<String> {
-    biguints.iter().map(|biguint| format!("0x{:064x}", biguint)).collect()
+    biguints
+        .iter()
+        .map(|biguint| format!("0x{:064x}", biguint))
+        .collect()
 }
 
-pub unsafe fn get_circuit_sizes(constraint_system_buf: &[u8], has_ipa_claim: bool) -> CircuitSizes {
+pub fn get_circuit_sizes(constraint_system_buf: &[u8], has_ipa_claim: bool) -> CircuitSizes {
     let mut total: u32 = 0;
     let mut subgroup: u32 = 0;
-    bindgen::acir_get_circuit_sizes(
-        constraint_system_buf.to_buffer().as_slice().as_ptr(),
-        &has_ipa_claim,
-        &mut total,
-        &mut subgroup,
-    );
-    CircuitSizes {
-        total: total.to_be(),
-        subgroup: subgroup.to_be(),
+    // if the constraint system buffer is empty, there are no gates, by definition. No need to call FFI.
+    if !constraint_system_buf.is_empty() {
+        // keep the Buffer alive for the FFI call
+        let buffer = constraint_system_buf.to_buffer();
+        // use explicit 1-byte boolean representation for FFI
+        let has_ipa_u8: u8 = if has_ipa_claim { 1 } else { 0 };
+        unsafe {
+            let buf_ptr = buffer.as_slice().as_ptr();
+            let ipa_ptr = (&has_ipa_u8 as *const u8) as *const _;
+            bindgen::acir_get_circuit_sizes(buf_ptr, ipa_ptr, &mut total, &mut subgroup);
+        }
+        // bindgen::acir_get_circuit_sizes returns big_endian u32 values, so convert them back to native
+        total = u32::from_be(total);
+        subgroup = u32::from_be(subgroup);
     }
+    CircuitSizes { total, subgroup }
 }
 
 pub unsafe fn acir_prove_ultra_honk(
@@ -147,7 +159,7 @@ pub unsafe fn acir_get_ultra_honk_verification_key(constraint_system_buf: &[u8])
     let mut out_ptr = ptr::null_mut();
     bindgen::acir_write_vk_ultra_honk(
         constraint_system_buf.to_buffer().as_slice().as_ptr(),
-        &mut out_ptr
+        &mut out_ptr,
     );
     Buffer::from_ptr(
         Buffer::from_ptr(out_ptr)
@@ -164,7 +176,7 @@ pub unsafe fn acir_get_ultra_honk_keccak_verification_key(constraint_system_buf:
     let mut out_ptr = ptr::null_mut();
     bindgen::acir_write_vk_ultra_keccak_honk(
         constraint_system_buf.to_buffer().as_slice().as_ptr(),
-        &mut out_ptr
+        &mut out_ptr,
     );
     Buffer::from_ptr(
         Buffer::from_ptr(out_ptr)
@@ -177,11 +189,13 @@ pub unsafe fn acir_get_ultra_honk_keccak_verification_key(constraint_system_buf:
     .to_vec()
 }
 
-pub unsafe fn acir_get_ultra_honk_keccak_zk_verification_key(constraint_system_buf: &[u8]) -> Vec<u8> {
+pub unsafe fn acir_get_ultra_honk_keccak_zk_verification_key(
+    constraint_system_buf: &[u8],
+) -> Vec<u8> {
     let mut out_ptr = ptr::null_mut();
     bindgen::acir_write_vk_ultra_keccak_zk_honk(
         constraint_system_buf.to_buffer().as_slice().as_ptr(),
-        &mut out_ptr
+        &mut out_ptr,
     );
     Buffer::from_ptr(
         Buffer::from_ptr(out_ptr)
@@ -224,7 +238,10 @@ pub unsafe fn acir_verify_ultra_keccak_zk_honk(proof_buf: &[u8], vkey_buf: &[u8]
     result
 }
 
-pub unsafe fn acir_prove_and_verify_ultra_honk(constraint_system_buf: &[u8], witness_buf: &[u8]) -> bool {
+pub unsafe fn acir_prove_and_verify_ultra_honk(
+    constraint_system_buf: &[u8],
+    witness_buf: &[u8],
+) -> bool {
     let mut result = false;
     bindgen::acir_prove_and_verify_ultra_honk(
         constraint_system_buf.to_buffer().as_ptr(),
@@ -302,4 +319,3 @@ pub fn acir_set_storage_budget(max_bytes: u64) {
 pub fn acir_set_storage_budget_from_string(budget_str: &str) {
     env::set_var("BB_STORAGE_BUDGET", budget_str);
 }
-

@@ -1,7 +1,9 @@
+use bindgen::Builder;
 use cmake::Config;
+use needs_rebuild::{needs_rebuild, ScanOptions};
 use std::env;
 use std::path::PathBuf;
-use std::process::{Command};
+use std::process::Command;
 
 /// Fix duplicate type definitions in the generated bindings file
 /// It's known bug with bindgen that generates duplicate type definitions
@@ -108,7 +110,10 @@ fn build_lib(target_os: &str) -> PathBuf {
             .output()
             .expect("Failed to execute build_cpp.sh");
         if !cmd.status.success() {
-            panic!("build_cpp.sh failed with error: {}", String::from_utf8_lossy(&cmd.stderr));
+            panic!(
+                "build_cpp.sh failed with error: {}",
+                String::from_utf8_lossy(&cmd.stderr)
+            );
         }
         dst = PathBuf::from("../cpp");
     }
@@ -116,16 +121,27 @@ fn build_lib(target_os: &str) -> PathBuf {
 }
 
 fn main() {
-    // Notify Cargo to rerun this build script if `build.rs` changes.
+    // Notify Cargo to rerun this build script if `build.rs` changes
     println!("cargo:rerun-if-changed=build.rs");
 
     // cfg!(target_os = "<os>") does not work so we get the value
     // of the target_os environment variable to determine the target OS.
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
 
-    //let dst = PathBuf::from("../cpp");
-    let dst = build_lib(&target_os);
-
+    let mut dst = PathBuf::from("../cpp");
+    let mut options = ScanOptions::new(&[
+        "**/src/barretenberg/**/*.hpp",
+        "**/src/barretenberg/**/*.cpp",
+    ]);
+    options.verbose = true;
+    if needs_rebuild(&dst, &dst.join("build/lib/libbarretenberg.a"), options)
+        .expect("Failed to check if rebuild is needed")
+    {
+        println!("cargo:warning=Rebuilding barretenberg C++ library...");
+        dst = build_lib(&target_os);
+    } else {
+        println!("cargo:warning=barretenberg C++ library is up to date, no rebuild needed.");
+    }
 
     // Add the library search path for Rust to find during linking.
     println!("cargo:rustc-link-search={}/build/lib", dst.display());
@@ -164,7 +180,7 @@ fn main() {
         .output()
         .unwrap();
 
-    let mut builder = bindgen::Builder::default();
+    let mut builder = Builder::default();
 
     if target_os == "android" {
         let android_home = option_env!("ANDROID_HOME").expect("ANDROID_HOME not set");
@@ -237,6 +253,11 @@ fn main() {
     let bindings = builder
         // The input header we would like to generate bindings for.
         .header_contents("wrapper.hpp", include_str!("./wrapper.hpp"))
+        .allowlist_function("bbapi_set_verbose_logging")
+        .allowlist_function("bbapi_set_debug_logging")
+        .allowlist_function("bbapi_non_chonk")
+        .allowlist_function("bbapi_init")
+        .allowlist_function("bbapi_cleanup")
         .allowlist_function("bbapi_free_result")
         .allowlist_function("pedersen_commit")
         .allowlist_function("pedersen_hash")

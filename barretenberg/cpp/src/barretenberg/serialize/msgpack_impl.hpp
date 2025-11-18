@@ -100,6 +100,31 @@ inline void msgpack_cbind_schema_impl(auto func, uint8_t** output_out, size_t* o
         msgpack_cbind_impl(func, input_in, input_len_in, output_out, output_len_out);                                  \
     }
 
+// The CBIND_WRAPPED_NOSCHEMA macro generates a function named 'cname' that, like CBIND_NOSCHEMA decodes the input
+// arguments from msgpack format, calls the target function, and then encodes the return value back into msgpack format.
+// However, it also wraps the function call in a try-catch block to handle exceptions gracefully.
+#define CBIND_WRAPPED_NOSCHEMA(cname, func)                                                                            \
+    WASM_EXPORT void cname(const uint8_t* input_in, size_t input_len_in, uint8_t** output_out, size_t* output_len_out) \
+    {                                                                                                                  \
+        try {                                                                                                          \
+            msgpack_cbind_impl(func, input_in, input_len_in, output_out, output_len_out);                              \
+        } catch (const std::exception& e) {                                                                            \
+            const std::string error_message = std::string("Exception during ") + #cname + " execution: " + e.what();   \
+            size_t message_size = error_message.size() + 1;                                                            \
+            uint8_t* error_output = static_cast<uint8_t*>(aligned_alloc(64, message_size));                            \
+            memcpy(error_output, error_message.c_str(), message_size);                                                 \
+            *output_out = error_output;                                                                                \
+            *output_len_out = message_size;                                                                            \
+        } catch (...) {                                                                                                \
+            const std::string error_message = std::string("Unknown exception during ") + #cname + " execution.";       \
+            size_t message_size = error_message.size() + 1;                                                            \
+            uint8_t* error_output = static_cast<uint8_t*>(aligned_alloc(64, message_size));                            \
+            memcpy(error_output, error_message.c_str(), message_size);                                                 \
+            *output_out = error_output;                                                                                \
+            *output_len_out = message_size;                                                                            \
+        }                                                                                                              \
+    }
+
 // The CBIND macro is a convenient utility that abstracts away several steps in binding C functions with msgpack
 // serialization. It creates two separate functions:
 // 1. cname function: This decodes the input arguments from msgpack format, calls the target function,

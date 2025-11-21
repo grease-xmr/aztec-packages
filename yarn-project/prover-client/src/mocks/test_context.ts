@@ -9,7 +9,9 @@ import type { FieldsOf } from '@aztec/foundation/types';
 import { getVKTreeRoot } from '@aztec/noir-protocol-circuits-types/vk-tree';
 import { ProtocolContractsList } from '@aztec/protocol-contracts';
 import { computeFeePayerBalanceLeafSlot } from '@aztec/protocol-contracts/fee-juice';
-import { PublicDataWrite } from '@aztec/stdlib/avm';
+import { SimpleContractDataSource } from '@aztec/simulator/public/fixtures';
+import { PublicProcessorFactory } from '@aztec/simulator/server';
+import { PublicDataWrite, PublicSimulatorConfig } from '@aztec/stdlib/avm';
 import { AztecAddress } from '@aztec/stdlib/aztec-address';
 import { EthAddress } from '@aztec/stdlib/block';
 import type { Checkpoint } from '@aztec/stdlib/checkpoint';
@@ -264,44 +266,45 @@ export class TestContext {
       blocks.push({ header, txs });
     }
 
-    const checkpoint = await builder.completeCheckpoint();
-    this.checkpoints.push(checkpoint);
-
-    return {
-      constants,
-      header: checkpoint.header,
-      blocks,
-      l1ToL2Messages,
-      totalNumBlobFields,
-      previousBlockHeader,
-    };
+    return { blocks, l1ToL2Messages, blobFields };
   }
 
-  private async makeProcessedTx(opts: Parameters<typeof mockProcessedTx>[0] = {}): Promise<ProcessedTx> {
-    const tx = await mockProcessedTx({
-      vkTreeRoot: getVKTreeRoot(),
-      protocolContracts: ProtocolContractsList,
-      feePayer: this.feePayer,
-      ...opts,
-    });
+  public async processPublicFunctions(
+    txs: Tx[],
+    {
+      maxTransactions = txs.length,
+      numL1ToL2Messages = 0,
+      contractDataSource,
+    }: {
+      maxTransactions?: number;
+      numL1ToL2Messages?: number;
+      contractDataSource?: SimpleContractDataSource;
+    } = {},
+  ) {
+    const l1ToL2Messages = times(numL1ToL2Messages, i => new Fr(this.blockNumber * 100 + i));
+    const merkleTrees = await this.worldState.fork();
+    await merkleTrees.appendLeaves(
+      MerkleTreeId.L1_TO_L2_MESSAGE_TREE,
+      padArrayEnd<Fr, number>(l1ToL2Messages, Fr.ZERO, NUMBER_OF_L1_L2_MESSAGES_PER_ROLLUP),
+    );
 
-    this.feePayerBalance = new Fr(this.feePayerBalance.toBigInt() - tx.txEffect.transactionFee.toBigInt());
+    const processorFactory = new PublicProcessorFactory(
+      contractDataSource ?? new SimpleContractDataSource(),
+      new TestDateProvider(),
+    );
+    const publicProcessor = processorFactory.create(
+      merkleTrees,
+      this.globalVariables,
+      PublicSimulatorConfig.from({
+        skipFeeEnforcement: false,
+        collectDebugLogs: false,
+        collectHints: true,
+        maxDebugLogMemoryReads: 0,
+        collectStatistics: false,
+      }),
+    );
 
-    const feePayerSlot = await computeFeePayerBalanceLeafSlot(this.feePayer);
-    const feePaymentPublicDataWrite = new PublicDataWrite(feePayerSlot, this.feePayerBalance);
-    tx.txEffect.publicDataWrites[0] = feePaymentPublicDataWrite;
-    if (tx.avmProvingRequest) {
-      tx.avmProvingRequest.inputs.publicInputs.accumulatedData.publicDataWrites[0] = feePaymentPublicDataWrite;
-    }
-
-    return tx;
-  }
-
-  private getBlockHeader(blockNumber: number): BlockHeader {
-    if (blockNumber > 0 && blockNumber >= this.nextBlockNumber) {
-      throw new Error(`Block header not built for block number ${blockNumber}.`);
-    }
-    return blockNumber === 0 ? this.worldState.getCommitted().getInitialHeader() : this.headers.get(blockNumber)!;
+    return await publicProcessor.process(txs, { maxTransactions });
   }
 
   private async updateTrees(txs: ProcessedTx[], fork: MerkleTreeWriteOperations) {

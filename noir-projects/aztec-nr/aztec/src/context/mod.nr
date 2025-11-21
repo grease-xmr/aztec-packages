@@ -8,6 +8,7 @@ pub mod utility_context;
 
 pub mod call_interfaces;
 pub mod gas;
+pub mod note_hash_read;
 
 pub use call_interfaces::{
     PrivateCallInterface, PrivateStaticCallInterface, PublicCallInterface,

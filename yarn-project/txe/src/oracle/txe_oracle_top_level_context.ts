@@ -46,6 +46,7 @@ import {
 import { type ContractArtifact, FunctionSelector, FunctionType } from '@aztec/stdlib/abi';
 import { AuthWitness } from '@aztec/stdlib/auth-witness';
 import { PublicSimulatorConfig } from '@aztec/stdlib/avm';
+import { PublicSimulatorConfig } from '@aztec/stdlib/avm';
 import { AztecAddress } from '@aztec/stdlib/aztec-address';
 import { Body, L2Block } from '@aztec/stdlib/block';
 import { type ContractInstanceWithAddress, computePartialAddress } from '@aztec/stdlib/contract';
@@ -386,6 +387,7 @@ export class TXEOracleTopLevelContext implements IMiscOracle, ITxeExecutionOracl
       guardedMerkleTrees,
       contractsDB,
       new PublicTxSimulator(guardedMerkleTrees, contractsDB, globals, config),
+      new PublicTxSimulator(guardedMerkleTrees, contractsDB, globals, config),
       new TestDateProvider(),
     );
 
@@ -492,12 +494,14 @@ export class TXEOracleTopLevelContext implements IMiscOracle, ITxeExecutionOracl
     const contractsDB = new PublicContractsDB(new TXEPublicContractDataSource(blockNumber, this.contractDataProvider));
     const guardedMerkleTrees = new GuardedMerkleTreeOperations(forkedWorldTrees);
     const config = PublicSimulatorConfig.from({
+    const config = PublicSimulatorConfig.from({
       skipFeeEnforcement: true,
       collectDebugLogs: true,
       collectHints: false,
       collectStatistics: false,
       collectCallMetadata: true,
     });
+    const simulator = new PublicTxSimulator(guardedMerkleTrees, contractsDB, globals, config);
     const simulator = new PublicTxSimulator(guardedMerkleTrees, contractsDB, globals, config);
     const processor = new PublicProcessor(globals, guardedMerkleTrees, contractsDB, simulator, new TestDateProvider());
 

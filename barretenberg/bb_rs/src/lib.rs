@@ -1,10 +1,30 @@
-use std::ffi::{c_char, CStr};
-use tracing::debug;
+mod barretenberg_api;
+mod noir_api;
 
-pub mod barretenberg_api;
+pub use barretenberg_api::bbapi::{CircuitComputeVk, CircuitProve, CircuitVerify};
 
-#[no_mangle]
-extern "C" fn logstr(char_ptr: *const c_char) {
-    let c_str = unsafe { CStr::from_ptr(char_ptr) };
-    debug!("{}", c_str.to_str().unwrap());
+pub mod ultra_honk {
+    pub use crate::barretenberg_api::bbapi::{
+        get_ultra_honk_verification_key as get_vk, prove_ultra_honk as prove,
+        verify_ultra_honk as verify,
+    };
 }
+
+pub mod ultra_honk_keccak {
+    pub use crate::barretenberg_api::bbapi::{
+        get_ultra_honk_keccak_verification_key as get_vk, prove_ultra_keccak_honk as prove,
+        verify_ultra_keccak_honk as verify,
+    };
+}
+
+pub mod ultra_honk_keccak_zk {
+    pub use crate::barretenberg_api::bbapi::{
+        get_ultra_honk_keccak_zk_verification_key as get_vk, prove_ultra_keccak_zk_honk as prove,
+        verify_ultra_keccak_zk_honk as verify,
+    };
+}
+
+pub use barretenberg_api::acir::{acir_get_slow_low_memory, CircuitSizes};
+
+pub use barretenberg_api::models;
+pub use barretenberg_api::traits;

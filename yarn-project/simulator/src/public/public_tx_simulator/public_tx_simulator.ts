@@ -1,4 +1,5 @@
 import { AVM_MAX_PROCESSABLE_L2_GAS } from '@aztec/constants';
+import { AVM_MAX_PROCESSABLE_L2_GAS } from '@aztec/constants';
 import { Fr } from '@aztec/foundation/fields';
 import { type Logger, createLogger } from '@aztec/foundation/log';
 import { ProtocolContractAddress, ProtocolContractsList } from '@aztec/protocol-contracts';
@@ -79,13 +80,16 @@ type ProcessedPhase = {
 export class PublicTxSimulator implements PublicTxSimulatorInterface {
   protected log: Logger;
   protected readonly config: PublicSimulatorConfig;
+  protected readonly config: PublicSimulatorConfig;
 
   constructor(
     protected merkleTree: MerkleTreeWriteOperations,
     protected contractsDB: PublicContractsDB,
     protected globalVariables: GlobalVariables,
     config?: Partial<PublicSimulatorConfig>,
+    config?: Partial<PublicSimulatorConfig>,
   ) {
+    this.config = PublicSimulatorConfig.from(config ?? {});
     this.config = PublicSimulatorConfig.from(config ?? {});
     this.log = createLogger(`simulator:public_tx_simulator`);
   }
@@ -342,6 +346,7 @@ export class PublicTxSimulator implements PublicTxSimulatorInterface {
       request.isStaticCall,
       calldata,
       allocatedGas,
+      this.config,
       this.config,
     );
     const avmCallResult = await simulator.execute();

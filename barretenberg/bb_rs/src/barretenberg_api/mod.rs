@@ -1,22 +1,28 @@
+#![allow(non_snake_case)]
+
 pub mod acir;
-pub mod aes;
+// pub mod aes;
 pub mod bbapi;
-pub mod blake2s;
-pub mod bn254;
-pub mod ecdsa;
-pub mod grumpkin;
+// pub mod blake2s;
+// pub mod bn254;
+// pub mod ecdsa;
+// pub mod grumpkin;
 pub mod models;
-pub mod pedersen;
-pub mod poseidon2;
-pub mod schnorr;
-pub mod secp256k1;
-pub mod srs;
+// pub mod pedersen;
+// pub mod poseidon2;
+// pub mod schnorr;
+// pub mod secp256k1;
+// pub mod srs;
 pub mod traits;
 
 #[cfg(test)]
 pub mod tests;
 
 mod bindgen {
+    #![allow(non_upper_case_globals)]
+    #![allow(non_camel_case_types)]
+    #![allow(non_snake_case)]
+
     // This matches bindgen::Builder output
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 }

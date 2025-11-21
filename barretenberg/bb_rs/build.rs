@@ -1,4 +1,6 @@
+use bindgen::Builder;
 use cmake::Config;
+use needs_rebuild::{needs_rebuild, ScanOptions};
 use std::env;
 use std::path::PathBuf;
 use std::process::Command;
@@ -10,18 +12,18 @@ use std::process::Command;
 /// rather than trying to patch for it in the C++ code.
 fn fix_duplicate_bindings(bindings_file: &PathBuf) {
     println!("cargo:warning=Fixing duplicate type definitions in bindings...");
-    
+
     let scripts_dir = PathBuf::from("scripts");
     let python_script = scripts_dir.join("fix_bindings.py");
     let shell_script = scripts_dir.join("fix_bindings.sh");
-    
+
     // Try Python script first
     if python_script.exists() {
         let output = Command::new("python3")
             .arg(&python_script)
             .arg(bindings_file)
             .output();
-            
+
         match output {
             Ok(result) => {
                 if result.status.success() {
@@ -36,21 +38,24 @@ fn fix_duplicate_bindings(bindings_file: &PathBuf) {
             }
         }
     }
-    
+
     // Fallback to shell script
     if shell_script.exists() {
         let output = Command::new("bash")
             .arg(&shell_script)
             .arg(bindings_file)
             .output();
-            
+
         match output {
             Ok(result) => {
                 if result.status.success() {
                     println!("cargo:warning=Successfully fixed bindings with shell script");
                 } else {
                     println!("cargo:warning=Shell script failed");
-                    eprintln!("Shell script stderr: {}", String::from_utf8_lossy(&result.stderr));
+                    eprintln!(
+                        "Shell script stderr: {}",
+                        String::from_utf8_lossy(&result.stderr)
+                    );
                 }
             }
             Err(e) => {
@@ -62,14 +67,11 @@ fn fix_duplicate_bindings(bindings_file: &PathBuf) {
     }
 }
 
-fn main() {
-    // Notify Cargo to rerun this build script if `build.rs` changes.
-    println!("cargo:rerun-if-changed=build.rs");
+fn dep_include(dep_name: &str, dst: &PathBuf) -> String {
+    format!("-I{}/{dep_name}", dst.join("build").join("_deps").display())
+}
 
-    // cfg!(target_os = "<os>") does not work so we get the value
-    // of the target_os environment variable to determine the target OS.
-    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
-
+fn build_lib(target_os: &str) -> PathBuf {
     // Build the C++ code using CMake and get the build directory path.
     let dst;
     // iOS
@@ -90,33 +92,70 @@ fn main() {
         let ndk_version = option_env!("NDK_VERSION").expect("NDK_VERSION not set");
 
         dst = Config::new("../cpp")
-        .generator("Ninja")
-        .configure_arg("-DCMAKE_BUILD_TYPE=Release")
-        .configure_arg("-DANDROID_ABI=arm64-v8a")
-        .configure_arg("-DANDROID_PLATFORM=android-33")
-        .configure_arg(&format!("--toolchain={}/ndk/{}/build/cmake/android.toolchain.cmake", android_home, ndk_version))
-        .configure_arg("-DTRACY_ENABLE=OFF")
-        .build_target("bb")
-        .build();
+            .generator("Ninja")
+            .configure_arg("-DCMAKE_BUILD_TYPE=Release")
+            .configure_arg("-DANDROID_ABI=arm64-v8a")
+            .configure_arg("-DANDROID_PLATFORM=android-33")
+            .configure_arg(&format!(
+                "--toolchain={}/ndk/{}/build/cmake/android.toolchain.cmake",
+                android_home, ndk_version
+            ))
+            .configure_arg("-DTRACY_ENABLE=OFF")
+            .build_target("bb")
+            .build();
     }
     // MacOS and other platforms
     else {
-        dst = Config::new("../cpp")
-        .generator("Ninja")
-        .configure_arg("-DCMAKE_BUILD_TYPE=Release")            
-        .configure_arg("-DTRACY_ENABLE=OFF")
-        .build_target("bb")
-        .build();
+        let cmd = Command::new("./scripts/build_bb.sh")
+            .output()
+            .expect("Failed to execute build_cpp.sh");
+        if !cmd.status.success() {
+            panic!(
+                "build_cpp.sh failed with error: {}",
+                String::from_utf8_lossy(&cmd.stderr)
+            );
+        }
+        dst = PathBuf::from("../cpp");
+    }
+    dst
+}
+
+fn main() {
+    // Notify Cargo to rerun this build script if `build.rs` changes
+    println!("cargo:rerun-if-changed=build.rs");
+
+    // cfg!(target_os = "<os>") does not work so we get the value
+    // of the target_os environment variable to determine the target OS.
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
+
+    let mut dst = PathBuf::from("../cpp");
+    let mut options = ScanOptions::new(&[
+        "**/src/barretenberg/**/*.hpp",
+        "**/src/barretenberg/**/*.cpp",
+    ]);
+    options.verbose = true;
+    if needs_rebuild(&dst, &dst.join("build/lib/libbarretenberg.a"), options)
+        .expect("Failed to check if rebuild is needed")
+    {
+        println!("cargo:warning=Rebuilding barretenberg C++ library...");
+        dst = build_lib(&target_os);
+    } else {
+        println!("cargo:warning=barretenberg C++ library is up to date, no rebuild needed.");
     }
 
     // Add the library search path for Rust to find during linking.
     println!("cargo:rustc-link-search={}/build/lib", dst.display());
 
     // Add the library search path for libdeflate
-    println!("cargo:rustc-link-search={}/build/_deps/libdeflate-build", dst.display());
+    println!(
+        "cargo:rustc-link-search={}/build/_deps/libdeflate-build",
+        dst.display()
+    );
 
     // Link the `barretenberg` static library.
     println!("cargo:rustc-link-lib=static=barretenberg");
+    // Link the AVM stubs
+    println!("cargo:rustc-link-lib=static=vm2_stub");
 
     // Link the `env` static library
     println!("cargo:rustc-link-lib=static=env");
@@ -133,9 +172,15 @@ fn main() {
 
     // Copy the headers to the build directory.
     // Fix an issue where the headers are not included in the build.
-    Command::new("sh").args(&["copy-headers.sh", &format!("{}/build/include", dst.display())]).output().unwrap();
+    Command::new("sh")
+        .args(&[
+            "copy-headers.sh",
+            &format!("{}/build/include", dst.display()),
+        ])
+        .output()
+        .unwrap();
 
-    let mut builder = bindgen::Builder::default();
+    let mut builder = Builder::default();
 
     if target_os == "android" {
         let android_home = option_env!("ANDROID_HOME").expect("ANDROID_HOME not set");
@@ -191,48 +236,29 @@ fn main() {
             ]);
     } else {
         builder = builder
-        // Add the include path for headers.
-        .clang_args([
-            "-std=c++20",
-            "-xc++",
-            &format!("-I{}/build/include", dst.display()),
-            // Dependencies' include paths needs to be added manually.
-            &format!("-I{}/build/_deps/msgpack-c/src/msgpack-c/include", dst.display()),
-            //&format!("-I{}/build/_deps/libdeflate-src", dst.display()),
-        ]);
+            // Add the include path for headers.
+            .clang_args([
+                "-std=c++20",
+                "-xc++",
+                &format!("-I{}/build/include", dst.display()),
+                // Dependencies' include paths needs to be added manually.
+                &dep_include("msgpack-c/src/msgpack-c/include", &dst),
+                &dep_include("tracy-src/public", &dst),
+                //&format!("-I{}/build/_deps/libdeflate-src", dst.display()),
+                &format!("-I{}/build/_deps/libdeflate-src", dst.display()),
+                &format!("-I{}/build/include/barretenberg", dst.display()),
+            ]);
     }
 
     let bindings = builder
         // The input header we would like to generate bindings for.
-        .header_contents(
-            "wrapper.hpp",
-            r#"
-                #include <barretenberg/crypto/pedersen_commitment/c_bind.hpp>
-                #include <barretenberg/crypto/pedersen_hash/c_bind.hpp>
-                #include <barretenberg/crypto/poseidon2/c_bind.hpp>
-                #include <barretenberg/crypto/blake2s/c_bind.hpp>
-                #include <barretenberg/crypto/aes128/c_bind.hpp>
-                #include <barretenberg/crypto/schnorr/c_bind.hpp>
-                #include <barretenberg/crypto/ecdsa/c_bind.h>
-                #include <barretenberg/ecc/curves/secp256k1/c_bind.hpp>
-                #include <barretenberg/srs/c_bind.hpp>
-                #include <barretenberg/common/c_bind.hpp>
-                #include <barretenberg/dsl/acir_proofs/c_bind.hpp>
-                #include <barretenberg/bbapi/c_bind.hpp>
-                
-                // Grumpkin function declarations (no header file exists)
-                extern "C" {
-                    void ecc_grumpkin__mul(uint8_t const* point_buf, uint8_t const* scalar_buf, uint8_t* result);
-                    void ecc_grumpkin__add(uint8_t const* point_a_buf, uint8_t const* point_b_buf, uint8_t* result);
-                    void ecc_grumpkin__batch_mul(uint8_t const* point_buf, uint8_t const* scalar_buf, uint32_t num_points, uint8_t* result);
-                    void ecc_grumpkin__get_random_scalar_mod_circuit_modulus(uint8_t* result);
-                    void ecc_grumpkin__reduce512_buffer_mod_circuit_modulus(uint8_t* input, uint8_t* result);
-                    
-                    // BN254 function declarations (no header file exists)
-                    void bn254_fr_sqrt(uint8_t const* input, uint8_t* result);
-                }
-            "#,
-        )
+        .header_contents("wrapper.hpp", include_str!("./wrapper.hpp"))
+        .allowlist_function("bbapi_set_verbose_logging")
+        .allowlist_function("bbapi_set_debug_logging")
+        .allowlist_function("bbapi_non_chonk")
+        .allowlist_function("bbapi_init")
+        .allowlist_function("bbapi_cleanup")
+        .allowlist_function("bbapi_free_result")
         .allowlist_function("pedersen_commit")
         .allowlist_function("pedersen_hash")
         .allowlist_function("pedersen_hashes")
@@ -281,7 +307,7 @@ fn main() {
         .allowlist_function("acir_get_circuit_sizes")
         .allowlist_function("acir_serialize_proof_into_fields")
         .allowlist_function("acir_serialize_verification_key_into_fields")
-        .allowlist_function("acir_prove_ultra_zk_honk")
+        .allowlist_function("acir_prove_ultra_honk")
         .allowlist_function("acir_prove_ultra_keccak_honk")
         .allowlist_function("acir_prove_ultra_keccak_zk_honk")
         .allowlist_function("acir_prove_aztec_client")
@@ -289,7 +315,7 @@ fn main() {
         // for the build process.
         //.allowlist_function("acir_prove_ultra_starknet_honk")
         //.allowlist_function("acir_prove_ultra_starknet_zk_honk")
-        .allowlist_function("acir_verify_ultra_zk_honk")
+        .allowlist_function("acir_verify_ultra_honk")
         .allowlist_function("acir_verify_ultra_keccak_honk")
         .allowlist_function("acir_verify_ultra_keccak_zk_honk")
         .allowlist_function("acir_verify_aztec_client")
@@ -301,6 +327,7 @@ fn main() {
         //.allowlist_function("acir_write_vk_ultra_starknet_honk")
         //.allowlist_function("acir_write_vk_ultra_starknet_zk_honk")
         .allowlist_function("acir_prove_and_verify_ultra_honk")
+        .allowlist_function("create_avm2_recursion_constraints_goblin")
         // Tell cargo to invalidate the built crate whenever any of the included header files changed.
         .allowlist_function("bbapi")
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))

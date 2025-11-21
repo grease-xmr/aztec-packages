@@ -24,6 +24,7 @@ export class MeasuredPublicTxSimulator extends PublicTxSimulator implements Meas
     globalVariables: GlobalVariables,
     protected readonly metrics: ExecutorMetricsInterface,
     config?: Partial<PublicSimulatorConfig>,
+    config?: Partial<PublicSimulatorConfig>,
   ) {
     super(merkleTree, contractsDB, globalVariables, config);
   }

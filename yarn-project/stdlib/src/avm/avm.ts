@@ -1,4 +1,5 @@
 import { DEFAULT_MAX_DEBUG_LOG_MEMORY_READS } from '@aztec/constants';
+import { DEFAULT_MAX_DEBUG_LOG_MEMORY_READS } from '@aztec/constants';
 import { Fr } from '@aztec/foundation/fields';
 import { jsonParseWithSchema, jsonStringify } from '@aztec/foundation/json-rpc';
 
@@ -1161,6 +1162,7 @@ export class AvmFastSimulationInputs {
   constructor(
     public readonly wsRevision: WorldStateRevision,
     public readonly config: PublicSimulatorConfig,
+    public readonly config: PublicSimulatorConfig,
     public tx: AvmTxHint,
     public globalVariables: GlobalVariables,
     public protocolContracts: ProtocolContracts,
@@ -1169,6 +1171,7 @@ export class AvmFastSimulationInputs {
   static empty() {
     return new AvmFastSimulationInputs(
       WorldStateRevision.empty(),
+      PublicSimulatorConfig.empty(),
       PublicSimulatorConfig.empty(),
       AvmTxHint.empty(),
       GlobalVariables.empty(),
@@ -1181,11 +1184,14 @@ export class AvmFastSimulationInputs {
       .object({
         wsRevision: WorldStateRevision.schema,
         config: PublicSimulatorConfig.schema,
+        config: PublicSimulatorConfig.schema,
         tx: AvmTxHint.schema,
         globalVariables: GlobalVariables.schema,
         protocolContracts: ProtocolContracts.schema,
       })
       .transform(
+        ({ wsRevision, config, tx, globalVariables, protocolContracts }) =>
+          new AvmFastSimulationInputs(wsRevision, config, tx, globalVariables, protocolContracts),
         ({ wsRevision, config, tx, globalVariables, protocolContracts }) =>
           new AvmFastSimulationInputs(wsRevision, config, tx, globalVariables, protocolContracts),
       );

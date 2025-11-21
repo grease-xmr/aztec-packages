@@ -3,6 +3,7 @@ import { decryptBn254Keystore } from '@aztec/foundation/crypto/bls/bn254_keystor
 import { loadKeystoreFile } from '@aztec/node-keystore/loader';
 import type { KeyStore } from '@aztec/node-keystore/types';
 import { AztecAddress } from '@aztec/stdlib/aztec-address';
+import { AztecAddress } from '@aztec/stdlib/aztec-address';
 
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
@@ -46,24 +47,32 @@ describe('validator keys utilities', () => {
       expect(out).toBe('m/12381/3600/5/0/3');
     });
 
-    it('only replaces address / account indices when path is the default path', () => {
-      const out = withValidatorIndex('m/12381/3600/0/0/0', 5, 3);
-      expect(out).toBe('m/12381/3600/5/0/3');
+    it('uses default values when parameters are not provided', () => {
+      const out = withValidatorIndex('m/12381/3600/999/0/999');
+      expect(out).toBe('m/12381/3600/0/0/0');
+    });
 
-      const out2 = withValidatorIndex('m/12381/3600/33/0/33', 5, 3);
-      expect(out2).toBe('m/12381/3600/33/0/33');
+    it('uses default address index when only account index is provided', () => {
+      const out = withValidatorIndex('m/12381/3600/999/0/999', 7);
+      expect(out).toBe('m/12381/3600/7/0/0');
     });
 
     it('returns the path unchanged for non-matching paths', () => {
       const original = 'm/44/60/0/0/0';
       const out = withValidatorIndex(original, 9, 5);
+      const out = withValidatorIndex(original, 9, 5);
       expect(out).toBe(original);
     });
 
-    it('returns the path unchanged for BLS paths with different length', () => {
+    it('returns the path unchanged for BLS paths with incorrect length', () => {
       const shortPath = 'm/12381/3600/0/0';
       const out = withValidatorIndex(shortPath, 5, 3);
       expect(out).toBe(shortPath);
+    });
+
+    it('correctly handles edge case values', () => {
+      const out = withValidatorIndex('m/12381/3600/0/0/0', 0, 0);
+      expect(out).toBe('m/12381/3600/0/0/0');
     });
   });
 
@@ -158,7 +167,7 @@ describe('validator keys utilities', () => {
         accountIndex: 0,
         baseAddressIndex: 0,
         mnemonic: TEST_MNEMONIC,
-        feeRecipient: feeRecipient,
+        feeRecipient: ('0x' + '44'.repeat(32)) as unknown as AztecAddress,
       });
 
       // Build with account index 1, same address index
@@ -168,7 +177,7 @@ describe('validator keys utilities', () => {
         accountIndex: 1,
         baseAddressIndex: 0,
         mnemonic: TEST_MNEMONIC,
-        feeRecipient: feeRecipient,
+        feeRecipient: ('0x' + '44'.repeat(32)) as unknown as AztecAddress,
       });
 
       // Extract attesters
@@ -187,6 +196,7 @@ describe('validator keys utilities', () => {
     });
 
     it('derives different BLS and ETH keys when address index changes', async () => {
+      const feeRecipient = await AztecAddress.random();
       // Build with address index 0
       const { validators: v1, summaries: s1 } = await buildValidatorEntries({
         validatorCount: 1,
@@ -220,48 +230,6 @@ describe('validator keys utilities', () => {
       expect(att2.bls).toBeDefined();
       expect(att1.bls).not.toEqual(att2.bls);
       expect(s1[0].attesterBls).not.toEqual(s2[0].attesterBls);
-    });
-
-    it('uses attester address as coinbase when coinbase is not provided', async () => {
-      const { validators, summaries } = await buildValidatorEntries({
-        validatorCount: 1,
-        publisherCount: 0,
-        accountIndex: 0,
-        baseAddressIndex: 0,
-        mnemonic: TEST_MNEMONIC,
-        feeRecipient: feeRecipient,
-        // coinbase not provided
-      });
-
-      expect(validators.length).toBe(1);
-      expect(summaries.length).toBe(1);
-
-      const validator = validators[0];
-      const summary = summaries[0];
-
-      // Coinbase should equal the attester ETH address
-      expect(validator.coinbase).toBe(summary.attesterEth);
-      expect(validator.coinbase).toBeDefined();
-    });
-
-    it('uses provided coinbase when explicitly set', async () => {
-      const customCoinbase = '0x1234567890123456789012345678901234567890' as any;
-      const { validators, summaries } = await buildValidatorEntries({
-        validatorCount: 1,
-        publisherCount: 0,
-        accountIndex: 0,
-        baseAddressIndex: 0,
-        mnemonic: TEST_MNEMONIC,
-        feeRecipient: feeRecipient,
-        coinbase: customCoinbase,
-      });
-
-      expect(validators.length).toBe(1);
-      const validator = validators[0];
-
-      // Coinbase should be the custom value, not the attester address
-      expect(validator.coinbase).toBe(customCoinbase);
-      expect(validator.coinbase).not.toBe(summaries[0].attesterEth);
     });
   });
 

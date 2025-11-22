@@ -21,6 +21,8 @@ concurrency:
 jobs:
   get-image-tag:
     runs-on: ubuntu-latest
+    # Don't run on forks
+    if: github.event.pull_request.head.repo.fork != true
     outputs:
       tag: ${{ steps.determine_tag.outputs.TAG }}
       semver: ${{ steps.determine_tag.outputs.SEMVER }}

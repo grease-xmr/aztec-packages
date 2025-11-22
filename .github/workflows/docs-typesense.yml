@@ -2,9 +2,9 @@ name: Docs Scraper
 
 on:
   workflow_dispatch:
-  schedule:
-    # Run the workflow every night at 5:00 AM UTC, after nightly release and docs update
-    - cron: "0 5 * * *"
+#  schedule:
+#    # Run the workflow every night at 5:00 AM UTC, after nightly release and docs update
+#    - cron: "0 5 * * *"
   push:
     branches:
       - master

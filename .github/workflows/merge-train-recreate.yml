@@ -1,8 +1,9 @@
 name: Merge-Train Recreate
 
 on:
-  pull_request:
-    types: [closed]
+    workflow_dispatch:
+#  pull_request:
+#    types: [closed]
 
 jobs:
   recreate:

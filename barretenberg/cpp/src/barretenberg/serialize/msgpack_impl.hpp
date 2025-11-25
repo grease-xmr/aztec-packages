@@ -103,11 +103,16 @@ inline void msgpack_cbind_schema_impl(auto func, uint8_t** output_out, size_t* o
 // The CBIND_WRAPPED_NOSCHEMA macro generates a function named 'cname' that, like CBIND_NOSCHEMA decodes the input
 // arguments from msgpack format, calls the target function, and then encodes the return value back into msgpack format.
 // However, it also wraps the function call in a try-catch block to handle exceptions gracefully.
+// The function returns a boolean indicating the return type.
+// On false, the output buffer contains an error message as a string.
+// On true, the output buffer contains the function's return value in msgpack format, which may still indicate an error
+// if output_put decodes as an ErrorResponse.
 #define CBIND_WRAPPED_NOSCHEMA(cname, func)                                                                            \
-    WASM_EXPORT void cname(const uint8_t* input_in, size_t input_len_in, uint8_t** output_out, size_t* output_len_out) \
+    WASM_EXPORT bool cname(const uint8_t* input_in, size_t input_len_in, uint8_t** output_out, size_t* output_len_out) \
     {                                                                                                                  \
         try {                                                                                                          \
             msgpack_cbind_impl(func, input_in, input_len_in, output_out, output_len_out);                              \
+            return true;                                                                                               \
         } catch (const std::exception& e) {                                                                            \
             const std::string error_message = std::string("Exception during ") + #cname + " execution: " + e.what();   \
             size_t message_size = error_message.size() + 1;                                                            \
@@ -115,6 +120,7 @@ inline void msgpack_cbind_schema_impl(auto func, uint8_t** output_out, size_t* o
             memcpy(error_output, error_message.c_str(), message_size);                                                 \
             *output_out = error_output;                                                                                \
             *output_len_out = message_size;                                                                            \
+            return false;                                                                                              \
         } catch (...) {                                                                                                \
             const std::string error_message = std::string("Unknown exception during ") + #cname + " execution.";       \
             size_t message_size = error_message.size() + 1;                                                            \
@@ -122,6 +128,7 @@ inline void msgpack_cbind_schema_impl(auto func, uint8_t** output_out, size_t* o
             memcpy(error_output, error_message.c_str(), message_size);                                                 \
             *output_out = error_output;                                                                                \
             *output_len_out = message_size;                                                                            \
+            return false;                                                                                              \
         }                                                                                                              \
     }
 

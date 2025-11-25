@@ -1,9 +1,11 @@
 use super::bindgen;
+use crate::noir_api::artifacts::{load_binary, save_binary};
 use log::*;
 use num_bigint::BigUint;
 use rmp_serde::{decode, encode};
 use serde::{Deserialize, Serialize};
 use std::os::raw::c_void;
+use std::path::Path;
 use std::ptr;
 use std::ptr::null;
 // This is not used for now, but may replace the acir functions later
@@ -41,6 +43,15 @@ pub struct ProofSystemSettings {
     pub optimized_solidity_verifier: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Uint256(#[serde(with = "serde_bytes")] [u8; 32]);
+
+impl Uint256 {
+    pub fn as_bigint(&self) -> BigUint {
+        BigUint::from_bytes_be(&self.0)
+    }
+}
+
 fn default_oracle_hash_type() -> String {
     "poseidon2".to_string()
 }
@@ -67,17 +78,32 @@ pub struct CircuitProve {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CircuitProveResponse {
-    pub public_inputs: Vec<[u8; 32]>,
-    pub proof: Vec<[u8; 32]>,
+    pub public_inputs: Vec<Uint256>,
+    pub proof: Vec<Uint256>,
     pub vk: CircuitComputeVkResponse,
+}
+
+impl CircuitProveResponse {
+    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<(), BbApiError> {
+        let bytes = rmp_serde::to_vec_named(self)?;
+        // Will automatically compress if path ends with .gz
+        save_binary(path, &bytes)?;
+        Ok(())
+    }
+
+    pub fn load<P: AsRef<Path>>(path: P) -> Result<Self, BbApiError> {
+        let bytes = load_binary(path)?;
+        let response: CircuitProveResponse = rmp_serde::from_slice(&bytes)?;
+        Ok(response)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CircuitVerify {
     #[serde(with = "serde_bytes")]
     pub verification_key: Vec<u8>,
-    pub public_inputs: Vec<[u8; 32]>,
-    pub proof: Vec<[u8; 32]>,
+    pub public_inputs: Vec<Uint256>,
+    pub proof: Vec<Uint256>,
     pub settings: ProofSystemSettings,
 }
 
@@ -96,7 +122,7 @@ pub struct CircuitComputeVk {
 pub struct CircuitComputeVkResponse {
     #[serde(with = "serde_bytes")]
     pub bytes: Vec<u8>,
-    pub fields: Vec<[u8; 32]>,
+    pub fields: Vec<Uint256>,
     #[serde(with = "serde_bytes")]
     pub hash: Vec<u8>,
 }
@@ -109,7 +135,7 @@ pub struct VkAsFields {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VkAsFieldsResponse {
-    pub fields: Vec<[u8; 32]>,
+    pub fields: Vec<Uint256>,
 }
 
 // Error handling
@@ -123,6 +149,8 @@ pub enum BbApiError {
     InvalidResponse { expected: String, actual: String },
     #[error("API error: {0}")]
     ApiError(String),
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
 }
 
 impl From<BbApiError> for String {
@@ -134,6 +162,7 @@ impl From<BbApiError> for String {
                 format!("Invalid response: expected {}, got {}", expected, actual)
             }
             BbApiError::ApiError(e) => e,
+            BbApiError::IoError(e) => e.to_string(),
         }
     }
 }
@@ -154,16 +183,23 @@ where
     let encoded_command = rmp_serde::to_vec_named(&((command_name, command_data),))?;
     trace!("Encoded command: {}", hex::encode(&encoded_command));
     // Call the C++ bbapi function
-    let response_bytes = execute_bb_msgpack_command(&encoded_command);
+    let (is_msgpack, response_bytes) = execute_bb_msgpack_command(&encoded_command);
     trace!(
         "Command result (MsgPacked): {}",
         hex::encode(&response_bytes)
     );
 
-    // First decode response as msgpack array [response_name, generic] in case there is an error
+    if !is_msgpack {
+        let response_str = String::from_utf8_lossy(&response_bytes);
+        return Err(BbApiError::ApiError(format!(
+            "BbApi command {command_name} failed. The C++ library says: {response_str}"
+        )));
+    }
+    // From this point, the contract is that the data should be msgpack encoded.
+    // First decode response as the expected response type, R
     let (response_name, response_data): (String, R) =
         decode::from_slice(&response_bytes).map_err(|e| {
-            // Try to decode as error response
+            // Ok, it wasn't R, so it should be an ErrorResponse type
             match decode::from_slice::<(String, BbErrorResponse)>(&response_bytes) {
                 // Bbapi returned "successfully" with an error response
                 Ok((name, err)) if name == "ErrorResponse" => BbApiError::ApiError(format!(
@@ -175,8 +211,14 @@ where
                     expected: "ErrorResponse".into(),
                     actual: format!("{other}: {}", err.message),
                 },
-                // This is an actual msgpack decoding error
-                Err(e) => BbApiError::DecodeError(e),
+                // All right, there's a bug. The response is neither R nor ErrorResponse
+                Err(e) => BbApiError::InvalidResponse {
+                    expected: format!("{command_name}Response or ErrorResponse"),
+                    actual: format!(
+                        "{e}. The data returned was: {}",
+                        String::from_utf8_lossy(&response_bytes)
+                    ),
+                },
             }
         })?;
 
@@ -214,7 +256,7 @@ where
 /// * Thread Safety: The call to bindgen::bbapi must be thread-safe. If it relies on static or global state without
 /// synchronization, calling it from multiple threads could cause data races.
 /// * No Panics: The C code must not panic or unwind across the FFI boundary.
-fn execute_bb_msgpack_command(command: &[u8]) -> Vec<u8> {
+fn execute_bb_msgpack_command(command: &[u8]) -> (bool, Vec<u8>) {
     unsafe {
         let mut out_ptr: *mut u8 = ptr::null_mut();
         let mut out_len: usize = 0;
@@ -225,7 +267,7 @@ fn execute_bb_msgpack_command(command: &[u8]) -> Vec<u8> {
             panic!("Failed to initialize bbapi");
         }
         // Call the C++ bbapi function with all 4 required parameters
-        bindgen::bbapi_non_chonk(
+        let is_msgpack = bindgen::bbapi_non_chonk(
             command.as_ptr(), // input buffer
             command.len(),    // input length
             &mut out_ptr,     // output buffer pointer
@@ -234,24 +276,24 @@ fn execute_bb_msgpack_command(command: &[u8]) -> Vec<u8> {
 
         // Convert the output to a Vec<u8>
         if out_ptr.is_null() || out_len == 0 {
-            Vec::new()
+            (false, b"Empty response from bbapi".to_vec())
         } else {
             let result = std::slice::from_raw_parts(out_ptr, out_len).to_vec();
             // Free the C-allocated memory immediately. We have a copy of the data in our Vec.
             bindgen::bbapi_free_result(out_ptr as *mut c_void);
-            result
+            (is_msgpack, result)
         }
     }
 }
 
 // Helper functions to convert between different representations
-pub fn pack_proof_into_fields(vec_u8: &[u8]) -> Vec<[u8; 32]> {
+pub fn pack_proof_into_fields(vec_u8: &[u8]) -> Vec<Uint256> {
     vec_u8
         .chunks(32)
         .map(|chunk| {
             let mut array = [0u8; 32];
             array.copy_from_slice(chunk);
-            array
+            Uint256(array)
         })
         .collect()
 }
@@ -284,7 +326,7 @@ pub fn prove_ultra_honk(
     constraint_system_buf: &[u8],
     witness_buf: &[u8],
     vkey_buf: &[u8],
-) -> Result<Vec<u8>, BbApiError> {
+) -> Result<CircuitProveResponse, BbApiError> {
     let settings = ProofSystemSettings {
         ipa_accumulation: false,
         oracle_hash_type: "poseidon2".to_string(),
@@ -305,7 +347,7 @@ pub fn prove_ultra_honk(
     info!("Executing UltraHonk prover");
     let response = bbapi_command::<CircuitProve, CircuitProveResponse>("CircuitProve", &command)?;
     info!("UltraHonk prover returned successfully");
-    Ok(fields_to_bytes(&response.proof))
+    Ok(response)
 }
 
 /// Generate a proof using Keccak for EVM verification
@@ -313,7 +355,7 @@ pub fn prove_ultra_keccak_honk(
     constraint_system_buf: &[u8],
     witness_buf: &[u8],
     vkey_buf: &[u8],
-) -> Result<Vec<u8>, BbApiError> {
+) -> Result<CircuitProveResponse, BbApiError> {
     let settings = ProofSystemSettings {
         ipa_accumulation: false,
         oracle_hash_type: "keccak".to_string(),
@@ -334,7 +376,7 @@ pub fn prove_ultra_keccak_honk(
     info!("Executing Barretenberg UltraHonk prover (Poseidon2)");
     let response = bbapi_command::<CircuitProve, CircuitProveResponse>("CircuitProve", &command)?;
     info!("UltraHonk prover (Poseidon2) completed successfully");
-    Ok(fields_to_bytes(&response.proof))
+    Ok(response)
 }
 
 /// Generate a proof using Keccak with ZK enabled
@@ -342,7 +384,7 @@ pub fn prove_ultra_keccak_zk_honk(
     constraint_system_buf: &[u8],
     witness_buf: &[u8],
     vkey_buf: &[u8],
-) -> Result<Vec<u8>, BbApiError> {
+) -> Result<CircuitProveResponse, BbApiError> {
     let settings = ProofSystemSettings {
         ipa_accumulation: false,
         oracle_hash_type: "keccak".to_string(),
@@ -361,13 +403,13 @@ pub fn prove_ultra_keccak_zk_honk(
     };
 
     let response = bbapi_command::<CircuitProve, CircuitProveResponse>("CircuitProve", &command)?;
-    Ok(fields_to_bytes(&response.proof))
+    Ok(response)
 }
 
 /// Compute verification key
 pub fn get_ultra_honk_verification_key(
     constraint_system_buf: &[u8],
-) -> Result<Vec<u8>, BbApiError> {
+) -> Result<CircuitComputeVkResponse, BbApiError> {
     let settings = ProofSystemSettings {
         ipa_accumulation: false,
         oracle_hash_type: "poseidon2".to_string(),
@@ -385,7 +427,7 @@ pub fn get_ultra_honk_verification_key(
 
     let response =
         bbapi_command::<CircuitComputeVk, CircuitComputeVkResponse>("CircuitComputeVk", &command)?;
-    Ok(response.bytes)
+    Ok(response)
 }
 
 /// Compute verification key for Keccak
@@ -436,77 +478,81 @@ pub fn get_ultra_honk_keccak_zk_verification_key(
     Ok(response.bytes)
 }
 
-/// Verify a proof
-pub fn verify_ultra_honk(proof_buf: &[u8], vkey_buf: &[u8]) -> Result<bool, BbApiError> {
+fn to_verify(
+    prf: CircuitProveResponse,
+    ipa: bool,
+    hash: &str,
+    dzk: bool,
+) -> Result<CircuitVerify, BbApiError> {
+    if prf.proof.is_empty() {
+        return Err(BbApiError::ApiError("Proof cannot be empty".to_string()));
+    }
     let settings = ProofSystemSettings {
-        ipa_accumulation: false,
-        oracle_hash_type: "poseidon2".to_string(),
-        disable_zk: false,
+        ipa_accumulation: ipa,
+        oracle_hash_type: hash.to_string(),
+        disable_zk: dzk,
         optimized_solidity_verifier: false,
     };
 
-    let command = CircuitVerify {
-        verification_key: vkey_buf.to_vec(),
-        public_inputs: vec![], // Public inputs are embedded in the proof for Honk
-        proof: pack_proof_into_fields(proof_buf),
+    let verification_key = prf.vk.bytes;
+    let public_inputs = prf.public_inputs;
+    let proof = prf.proof;
+    Ok(CircuitVerify {
+        verification_key,
+        public_inputs,
+        proof,
         settings,
-    };
+    })
+}
 
+/// Verify a proof
+pub fn verify_ultra_honk(proof: CircuitProveResponse) -> Result<bool, BbApiError> {
+    let command = to_verify(proof, false, "poseidon2", false)?;
+    info!("Executing UltraHonk verifier");
     let response =
         bbapi_command::<CircuitVerify, CircuitVerifyResponse>("CircuitVerify", &command)?;
+    info!(
+        "UltraHonk verifier returned with result: {}",
+        response.verified
+    );
     Ok(response.verified)
 }
 
 /// Verify a Keccak proof
-pub fn verify_ultra_keccak_honk(proof_buf: &[u8], vkey_buf: &[u8]) -> Result<bool, BbApiError> {
-    let settings = ProofSystemSettings {
-        ipa_accumulation: false,
-        oracle_hash_type: "keccak".to_string(),
-        disable_zk: true,
-        optimized_solidity_verifier: false,
-    };
-
-    let command = CircuitVerify {
-        verification_key: vkey_buf.to_vec(),
-        public_inputs: vec![], // Public inputs are embedded in the proof for Honk
-        proof: pack_proof_into_fields(proof_buf),
-        settings,
-    };
-
+pub fn verify_ultra_keccak_honk(proof: CircuitProveResponse) -> Result<bool, BbApiError> {
+    let command = to_verify(proof, false, "keccak", true)?;
+    info!("Executing Keccak verifier");
     let response =
         bbapi_command::<CircuitVerify, CircuitVerifyResponse>("CircuitVerify", &command)?;
+    info!(
+        "Keccak verifier returned with result: {}",
+        response.verified
+    );
     Ok(response.verified)
 }
 
 /// Verify a Keccak ZK proof
-pub fn verify_ultra_keccak_zk_honk(proof_buf: &[u8], vkey_buf: &[u8]) -> Result<bool, BbApiError> {
-    let settings = ProofSystemSettings {
-        ipa_accumulation: false,
-        oracle_hash_type: "keccak".to_string(),
-        disable_zk: false,
-        optimized_solidity_verifier: false,
-    };
+pub fn verify_ultra_keccak_zk_honk(proof: CircuitProveResponse) -> Result<bool, BbApiError> {
+    let command = to_verify(proof, false, "keccak", false)?;
 
-    let command = CircuitVerify {
-        verification_key: vkey_buf.to_vec(),
-        public_inputs: vec![], // Public inputs are embedded in the proof for Honk
-        proof: pack_proof_into_fields(proof_buf),
-        settings,
-    };
-
+    info!("Executing UltraKeccakZK verifier");
     let response =
         bbapi_command::<CircuitVerify, CircuitVerifyResponse>("CircuitVerify", &command)?;
+    info!(
+        "UltraKeccakZK verifier returned with result: {}",
+        response.verified
+    );
     Ok(response.verified)
 }
 
 /// Convert VK to field elements
-pub fn vk_as_fields_ultra_honk(vk_buf: &[u8]) -> Result<Vec<u8>, BbApiError> {
+pub fn vk_as_fields_ultra_honk(vk_buf: &[u8]) -> Result<VkAsFieldsResponse, BbApiError> {
     let command = VkAsFields {
         verification_key: vk_buf.to_vec(),
     };
 
     let response = bbapi_command::<VkAsFields, VkAsFieldsResponse>("VkAsFields", &command)?;
-    Ok(fields_to_bytes(&response.fields))
+    Ok(response)
 }
 
 /// Convert proof to hex strings

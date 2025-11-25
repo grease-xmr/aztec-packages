@@ -37,20 +37,15 @@ CommandResponse bbapi(Command&& command)
  */
 CommandResponse bbapi_non_chonk(Command&& command)
 {
-    try {
-        // Check if this is a Chonk command
-        if (is_chonk_command(command)) {
-            return ErrorResponse{ .message =
-                                      "Chonk commands are not supported in bbapi_non_chonk. Use bbapi instead." };
-        }
-        // Execute the command using the global request and return the response
-        BBApiRequest request{};
-        return execute(request, std::move(command));
-    } catch (const std::exception& e) {
-        return ErrorResponse{ .message = std::string("Exception during bbapi_non_chonk execution: ") + e.what() };
-    } catch (...) {
-        return ErrorResponse{ .message = "Unknown exception during bbapi_non_chonk execution." };
+    // Check if this is a Chonk command
+    if (is_chonk_command(command)) {
+        return ErrorResponse{ .message =
+                                    "Chonk commands are not supported in bbapi_non_chonk. Use bbapi instead." };
     }
+    // Execute the command using the global request and return the response
+    BBApiRequest request{};
+    return execute(request, std::move(command));
+    // In the FFI API, exceptions are caught and returned in CBIND_WRAPPED_NOSCHEMA
 }
 
 } // namespace bb::bbapi

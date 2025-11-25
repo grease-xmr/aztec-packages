@@ -13,27 +13,54 @@ pub fn load_artifact(path: impl AsRef<Path>) -> Result<ProgramArtifact, std::io:
         )
     })
 }
-
-pub fn load_witness(path: impl AsRef<Path>) -> Result<Vec<u8>, std::io::Error> {
+/// Loads a binary file, such as a witness, or proof, decompressing it if it has a .gz extension
+pub fn load_binary(path: impl AsRef<Path>) -> Result<Vec<u8>, std::io::Error> {
     let path = path.as_ref();
     let is_compressed = path.extension().map(|ext| ext == "gz").unwrap_or(false);
     if is_compressed {
-        load_compressed_witness(path)
+        load_compressed_binary(path)
     } else {
-        load_uncompressed_witness(path)
+        load_uncompressed_binary(path)
     }
 }
 
-fn load_uncompressed_witness(path: &Path) -> Result<Vec<u8>, std::io::Error> {
+fn load_uncompressed_binary(path: &Path) -> Result<Vec<u8>, std::io::Error> {
     std::fs::read(path)
 }
 
-fn load_compressed_witness(path: &Path) -> Result<Vec<u8>, std::io::Error> {
+fn load_compressed_binary(path: &Path) -> Result<Vec<u8>, std::io::Error> {
     let file = File::open(path)?;
     let mut decoder = GzDecoder::new(file);
     let mut decompressed_data = Vec::new();
     decoder.read_to_end(&mut decompressed_data)?;
     Ok(decompressed_data)
+}
+
+/// Saves a binary file, such as a witness, or proof, compressing it if it has a .gz extension
+pub fn save_binary(path: impl AsRef<Path>, data: &[u8]) -> Result<(), std::io::Error> {
+    let path = path.as_ref();
+    let is_compressed = path.extension().map(|ext| ext == "gz").unwrap_or(false);
+    if is_compressed {
+        save_compressed_binary(path, data)
+    } else {
+        save_uncompressed_binary(path, data)
+    }
+}
+
+fn save_uncompressed_binary(path: &Path, data: &[u8]) -> Result<(), std::io::Error> {
+    std::fs::write(path, data)
+}
+
+fn save_compressed_binary(path: &Path, data: &[u8]) -> Result<(), std::io::Error> {
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+    use std::io::Write;
+
+    let file = File::create(path)?;
+    let mut encoder = GzEncoder::new(file, Compression::default());
+    encoder.write_all(data)?;
+    encoder.finish()?;
+    Ok(())
 }
 
 #[cfg(test)]

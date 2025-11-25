@@ -1,0 +1,29 @@
+[package]
+name = "bb_rs"
+version = "2.0.3"
+edition = "2021"
+authors = ["Bartosz Nowak", "Théo Madzou"]
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+noirc_artifacts = { version = "1.0.0-beta.15", path = "../../noir/noir-repo/tooling/noirc_artifacts" }
+acir = { version = "1.0.0-beta.15", path = "../../noir/noir-repo/acvm-repo/acir" }
+
+flate2 = {version = "1.1"}
+num-bigint = "0.4"
+rmp-serde = "1.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_bytes = "0.11"
+serde_json = { version = "1.0.145" }
+thiserror = "2.0.17"
+hex = "0.4.3"
+log = "0.4.28"
+
+[build-dependencies]
+bindgen = "0.72.1"
+cmake = "0.1.50"
+needs_rebuild = {  version = "1.2", path = "../../../../projects/detect_change" }
+
+[dev-dependencies]
+env_logger = "0.11.8"

@@ -17,12 +17,12 @@ TxSimulationResult AvmSimAPI::simulate(const FastSimulationInputs& inputs,
     // TODO(MW): Add hint checks here
     return AVM_TRACK_TIME_V("simulation/all",
                             simulation_helper.simulate_fast_with_existing_ws(contract_db,
-                                                                             inputs.ws_revision,
+                                                                             inputs.wsRevision,
                                                                              ws,
                                                                              inputs.config,
                                                                              inputs.tx,
-                                                                             inputs.global_variables,
-                                                                             inputs.protocol_contracts));
+                                                                             inputs.globalVariables,
+                                                                             inputs.protocolContracts));
 }
 
 TxSimulationResult AvmSimAPI::simulate_with_hinted_dbs(const ProvingInputs& inputs)

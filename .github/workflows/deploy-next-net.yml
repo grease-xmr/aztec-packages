@@ -4,9 +4,9 @@
 name: Deploy Next Net
 
 on:
-  schedule:
-    # Run every night at 4:00 AM UTC, after the nightly tag has been created
-    - cron: "0 4 * * *"
+#  schedule:
+#    # Run every night at 4:00 AM UTC, after the nightly tag has been created
+#    - cron: "0 4 * * *"
   workflow_dispatch:
     inputs:
       image_tag:
@@ -21,6 +21,8 @@ concurrency:
 jobs:
   get-image-tag:
     runs-on: ubuntu-latest
+    # Don't run on forks
+    if: github.event.pull_request.head.repo.fork != true
     outputs:
       tag: ${{ steps.determine_tag.outputs.TAG }}
       semver: ${{ steps.determine_tag.outputs.SEMVER }}

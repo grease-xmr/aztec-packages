@@ -1,0 +1,37 @@
+{
+  "noir_version": "1.0.0-beta.15+83245db91dcf63420ef4bcbbd85b98f397fee663",
+  "hash": "9763453774353198784",
+  "abi": {
+    "parameters": [
+      {
+        "name": "x",
+        "type": {
+          "kind": "field"
+        },
+        "visibility": "private"
+      },
+      {
+        "name": "y",
+        "type": {
+          "kind": "field"
+        },
+        "visibility": "public"
+      }
+    ],
+    "return_type": null,
+    "error_types": {}
+  },
+  "bytecode": "H4sIAAAAAAAA/6VSsQrCMBC9pCq6ibR7R90UP0EEJ3F0ERGbIYNFQik49hPEH/ArRD+nm6OLu4J3kMYIib3lldd7914uYfCpBuJuI1P+Rm7wDL6LemJwKqb3DpO5KkfnwXUxvRTFctUf32eH2/44KZ+nBzbHbnMr2XidcNwzINcG+OgqpmBfLnFdxEQqsc1kLtYyzYXKOsi3ESNNF4D7uUkf/qeHloWLtG+aSz62nblWgNi0/DMfbGD4EjJ/f/Yrh+3eeoihxtE+Xl760t9tAwAA",
+  "debug_symbols": "dY/BCoMwDIbfJeceFObFVxlDao0SCGmJ7WCI774ournDLk2Tv9/f/AsM2JepIxnjDO19gV6JmaaOY/CZoth0WR2cbZcV0UZw0Y1KXlEytFKYHTw9l/3RnLzsNXs1tXKAMlg1w5EYt9vqvnT1H701B9vUH7gx+mGdD6Q/+0IFbe2gtnPdLJV8z3gkGYuES7D8SqdyRk8aAw5FcTPdNfvmDQ==",
+  "file_map": {
+    "50": {
+      "source": "fn main(x: Field, y: pub Field) {\n    assert(x != y);\n}",
+      "path": ""
+    }
+  },
+  "expression_width": {
+    "Bounded": {
+      "width": 4
+    }
+  }
+}

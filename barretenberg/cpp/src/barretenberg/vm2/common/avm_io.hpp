@@ -421,31 +421,31 @@ struct AvmProvingInputs {
     static AvmProvingInputs from(const std::vector<uint8_t>& data);
     bool operator==(const AvmProvingInputs& other) const = default;
 
-    MSGPACK_CAMEL_CASE_FIELDS(public_inputs, hints);
+    MSGPACK_FIELDS(publicInputs, hints);
 };
 
 struct PublicSimulatorConfig {
-    FF prover_id = 0;
-    bool skip_fee_enforcement = false;
-    bool collect_call_metadata = false;
-    bool collect_hints = false;
-    bool collect_debug_logs = false;
-    uint32_t max_debug_log_memory_reads = 0;
-    bool collect_statistics = false;
+    FF proverId = 0;
+    bool skipFeeEnforcement = false;
+    bool collectCallMetadata = false;
+    bool collectHints = false;
+    bool collectDebugLogs = false;
+    uint32_t maxDebugLogMemoryReads = 0;
+    bool collectStatistics = false;
 
     bool operator==(const PublicSimulatorConfig& other) const = default;
 
-    MSGPACK_CAMEL_CASE_FIELDS(prover_id,
-                              skip_fee_enforcement,
-                              collect_call_metadata,
-                              collect_hints,
-                              collect_debug_logs,
-                              max_debug_log_memory_reads,
-                              collect_statistics);
+    MSGPACK_FIELDS(proverId,
+                   skipFeeEnforcement,
+                   collectCallMetadata,
+                   collectHints,
+                   collectDebugLogs,
+                   maxDebugLogMemoryReads,
+                   collectStatistics);
 };
 
 struct AvmFastSimulationInputs {
-    world_state::WorldStateRevision ws_revision;
+    world_state::WorldStateRevision wsRevision;
     PublicSimulatorConfig config;
     Tx tx;
     GlobalVariables global_variables;
@@ -454,7 +454,7 @@ struct AvmFastSimulationInputs {
     static AvmFastSimulationInputs from(const std::vector<uint8_t>& data);
     bool operator==(const AvmFastSimulationInputs& other) const = default;
 
-    MSGPACK_CAMEL_CASE_FIELDS(ws_revision, config, tx, global_variables, protocol_contracts);
+    MSGPACK_FIELDS(wsRevision, config, tx, globalVariables, protocolContracts);
 };
 
 ////////////////////////////////////////////////////////////////////////////

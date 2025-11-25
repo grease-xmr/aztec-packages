@@ -22,5 +22,6 @@
 	url = https://github.com/zkpassport/circuits
 [submodule "noir/noir-repo"]
 	path = noir/noir-repo
-	url = https://github.com/noir-lang/noir.git
+	url = git@github.com:grease-xmr/noir.git
 	shallow = true
+	branch = master

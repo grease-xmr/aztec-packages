@@ -1,4 +1,4 @@
-use super::traits::{DeserializeBuffer, SerializeBuffer};
+use crate::barretenberg_api::utils::{DeserializeBuffer, SerializeBuffer};
 use std::ffi::c_void;
 
 pub type Ptr = *mut c_void;

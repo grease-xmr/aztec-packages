@@ -32,7 +32,11 @@ fn ultra_honk_verify() {
     let _ = env_logger::try_init();
     let proof =
         CircuitProveResponse::load("test_vectors/hello_world_proof.gz").expect("Proof load failed");
-    assert_eq!(proof.proof.len(), 508, "Proof length should be 508 bytes");
+    assert_eq!(
+        proof.proof.len(),
+        508,
+        "Proof length should be 508 elements"
+    );
     let result = ultra_honk::verify(proof).expect("verify failed");
     assert!(result, "Proof should be valid");
 }
@@ -49,9 +53,5 @@ fn ultra_honk_verify_with_empty_proof() {
         },
     };
     let result = ultra_honk::verify(proof);
-    if let Err(BbApiError::ApiError(err)) = result {
-        assert_eq!(err, "Proof cannot be empty");
-    } else {
-        panic!("Expected an ApiError due to detecting empty proof buffer");
-    }
+    assert!(matches!(&result, Err(BbApiError::ApiError(msg)) if msg == "Proof cannot be empty"));
 }

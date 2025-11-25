@@ -13,7 +13,7 @@ fn test_acir_get_circuit_size() {
         0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
         0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     ];
-    let circuit_sizes = unsafe { acir::get_circuit_sizes(&constraint_system_buf, false) };
+    let circuit_sizes = acir::get_circuit_sizes(&constraint_system_buf, false);
     println!("{:?}", circuit_sizes);
     assert_eq!(circuit_sizes.total, 56);
     assert_eq!(circuit_sizes.subgroup, 64);

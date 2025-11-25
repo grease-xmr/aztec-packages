@@ -1,5 +1,5 @@
 mod barretenberg_api;
-mod noir_api;
+pub mod noir_api;
 
 pub use barretenberg_api::bbapi::{CircuitComputeVk, CircuitProve, CircuitVerify};
 
@@ -27,4 +27,3 @@ pub mod ultra_honk_keccak_zk {
 pub use barretenberg_api::acir::{acir_get_slow_low_memory, CircuitSizes};
 
 pub use barretenberg_api::models;
-pub use barretenberg_api::traits;

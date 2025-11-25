@@ -1,8 +1,6 @@
-use super::{
-    bindgen,
-    models::{Fr, Point},
-    traits::{DeserializeBuffer, SerializeBuffer},
-};
+use crate::barretenberg_api::bindgen;
+use crate::barretenberg_api::utils::{DeserializeBuffer, SerializeBuffer};
+use crate::models::{Fr, Point};
 
 /// Scalar multiplication on Secp256k1 curve: point * scalar
 pub unsafe fn ecc_secp256k1__mul(point: &Point, scalar: &Fr) -> Point {
@@ -31,4 +29,4 @@ pub unsafe fn ecc_secp256k1__reduce512_buffer_mod_circuit_modulus(input: &[u8; 6
         result_buf.as_mut_ptr(),
     );
     Fr::from_buffer(result_buf)
-} 
+}

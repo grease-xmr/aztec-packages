@@ -1,8 +1,6 @@
-use super::{
-    bindgen,
-    models::{Fq, Fr, Point},
-    traits::{DeserializeBuffer, SerializeBuffer},
-};
+use crate::barretenberg_api::bindgen;
+use crate::barretenberg_api::utils::{DeserializeBuffer, SerializeBuffer};
+use crate::models::{Fq, Fr, Point};
 
 pub unsafe fn schnorr_compute_public_key(private_key: &Fr) -> Point {
     let mut public_key_buf = [0; 64];

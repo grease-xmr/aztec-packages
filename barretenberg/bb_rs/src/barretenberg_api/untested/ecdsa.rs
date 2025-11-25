@@ -1,9 +1,7 @@
-use super::{
-    bindgen,
-    traits::SerializeBuffer,
-};
-
 // ECDSA secp256k1 curve functions
+
+use crate::barretenberg_api::bindgen;
+use crate::barretenberg_api::utils::SerializeBuffer;
 
 pub unsafe fn ecdsa__compute_public_key(private_key: &[u8; 32]) -> [u8; 64] {
     let mut public_key = [0; 64];
@@ -123,4 +121,4 @@ pub unsafe fn ecdsa_r_verify_signature_(
         &mut result,
     );
     result
-} 
+}

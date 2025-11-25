@@ -198,7 +198,7 @@ where
     // From this point, the contract is that the data should be msgpack encoded.
     // First decode response as the expected response type, R
     let (response_name, response_data): (String, R) =
-        decode::from_slice(&response_bytes).map_err(|e| {
+        decode::from_slice(&response_bytes).map_err(|_| {
             // Ok, it wasn't R, so it should be an ErrorResponse type
             match decode::from_slice::<(String, BbErrorResponse)>(&response_bytes) {
                 // Bbapi returned "successfully" with an error response
@@ -373,9 +373,9 @@ pub fn prove_ultra_keccak_honk(
         settings,
     };
 
-    info!("Executing Barretenberg UltraHonk prover (Poseidon2)");
+    info!("Executing Barretenberg UltraHonk-NonZK prover (Keccak)");
     let response = bbapi_command::<CircuitProve, CircuitProveResponse>("CircuitProve", &command)?;
-    info!("UltraHonk prover (Poseidon2) completed successfully");
+    info!("UltraHonk-NonZK prover (Keccak) completed successfully");
     Ok(response)
 }
 
@@ -402,7 +402,9 @@ pub fn prove_ultra_keccak_zk_honk(
         settings,
     };
 
+    info!("Executing Barretenberg UltraHonk-ZK prover (Keccak)");
     let response = bbapi_command::<CircuitProve, CircuitProveResponse>("CircuitProve", &command)?;
+    info!("UltraHonk-ZK prover (Keccak) completed successfully");
     Ok(response)
 }
 

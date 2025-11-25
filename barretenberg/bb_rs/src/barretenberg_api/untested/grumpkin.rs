@@ -1,8 +1,6 @@
-use super::{
-    bindgen,
-    models::{Fr, Point},
-    traits::{DeserializeBuffer, SerializeBuffer},
-};
+use crate::barretenberg_api::bindgen;
+use crate::barretenberg_api::utils::{DeserializeBuffer, SerializeBuffer};
+use crate::models::{Fr, Point};
 
 /// Scalar multiplication on Grumpkin curve: point * scalar
 pub unsafe fn ecc_grumpkin__mul(point: &Point, scalar: &Fr) -> Point {
@@ -29,23 +27,23 @@ pub unsafe fn ecc_grumpkin__add(point_a: &Point, point_b: &Point) -> Point {
 /// Batch scalar multiplication: multiply each point by the same scalar
 pub unsafe fn ecc_grumpkin__batch_mul(points: &[Point], scalar: &Fr) -> Vec<Point> {
     let num_points = points.len() as u32;
-    
+
     // Serialize all points into a single buffer
     let mut points_buf = Vec::with_capacity(points.len() * 64);
     for point in points {
         points_buf.extend_from_slice(&point.to_buffer());
     }
-    
+
     // Prepare result buffer
     let mut result_buf = vec![0u8; points.len() * 64];
-    
+
     bindgen::ecc_grumpkin__batch_mul(
         points_buf.as_ptr(),
         scalar.to_buffer().as_slice().as_ptr(),
         num_points,
         result_buf.as_mut_ptr(),
     );
-    
+
     // Deserialize results back into Points
     let mut results = Vec::with_capacity(points.len());
     for i in 0..points.len() {
@@ -55,7 +53,7 @@ pub unsafe fn ecc_grumpkin__batch_mul(points: &[Point], scalar: &Fr) -> Vec<Poin
         point_buf.copy_from_slice(&result_buf[start..end]);
         results.push(Point::from_buffer(point_buf));
     }
-    
+
     results
 }
 

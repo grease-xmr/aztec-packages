@@ -1,8 +1,6 @@
-use super::{
-    bindgen,
-    models::Fr,
-    traits::{DeserializeBuffer, SerializeBuffer},
-};
+use crate::barretenberg_api::bindgen;
+use crate::barretenberg_api::utils::{DeserializeBuffer, SerializeBuffer};
+use crate::models::Fr;
 
 pub fn blake2s(inputs: &[u8]) -> [u8; 32] {
     let mut output = [0; 32];

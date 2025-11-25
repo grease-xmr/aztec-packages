@@ -1,4 +1,5 @@
-use super::{bindgen, models::Ptr, traits::SerializeBuffer, Buffer};
+use super::{bindgen, models::Ptr};
+use crate::barretenberg_api::utils::{Buffer, SerializeBuffer};
 use num_bigint::BigUint;
 use std::env;
 use std::ptr;
@@ -57,11 +58,9 @@ pub fn get_circuit_sizes(constraint_system_buf: &[u8], has_ipa_claim: bool) -> C
     if !constraint_system_buf.is_empty() {
         // keep the Buffer alive for the FFI call
         let buffer = constraint_system_buf.to_buffer();
-        // use explicit 1-byte boolean representation for FFI
-        let has_ipa_u8: u8 = if has_ipa_claim { 1 } else { 0 };
         unsafe {
             let buf_ptr = buffer.as_slice().as_ptr();
-            let ipa_ptr = (&has_ipa_u8 as *const u8) as *const _;
+            let ipa_ptr = &has_ipa_claim as *const bool;
             bindgen::acir_get_circuit_sizes(buf_ptr, ipa_ptr, &mut total, &mut subgroup);
         }
         // bindgen::acir_get_circuit_sizes returns big_endian u32 values, so convert them back to native

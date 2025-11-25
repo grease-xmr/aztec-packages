@@ -11,7 +11,7 @@ CommandResponse bbapi_non_chonk(Command&& command);
 
 // Forward declaration for CBIND
 CBIND_DECL(bbapi)
-CBIND_DECL(bbapi_non_chonk)
+WASM_EXPORT bool bbapi_non_chonk(const uint8_t* input_in, size_t input_len_in, uint8_t** output_out, size_t* output_len_out);
 
 // Logging controls
 extern "C" void bbapi_set_verbose_logging(bool enabled);

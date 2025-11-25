@@ -155,7 +155,7 @@ class IpcServer {
             // Try to accept new clients (non-blocking for socket servers)
             accept();
 
-            int client_id = wait_for_data(100000000);
+            int client_id = wait_for_data(100000000); // 100ms timeout
             if (client_id < 0) {
                 // Timeout or error - check shutdown flag on next iteration
                 continue;

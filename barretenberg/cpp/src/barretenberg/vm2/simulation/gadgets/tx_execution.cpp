@@ -70,11 +70,6 @@ TxExecutionResult TxExecution::simulate(const Tx& tx)
     // but no information about nested calls. This can be added later.
     std::vector<CallStackMetadata> app_logic_return_values;
 
-    // NOTE: This vector will be populated with one CallStackMetadata per app logic enqueued call.
-    // IMPORTANT: The nesting will only be 1 level deep! You will get one result per enqueued call
-    // but no information about nested calls. This can be added later.
-    std::vector<CallStackMetadata> app_logic_return_values;
-
     events.emit(TxStartupEvent{
         .state = tx_context.serialize_tx_context_event(),
         .gas_limit = gas_limit,
@@ -167,12 +162,6 @@ TxExecutionResult TxExecution::simulate(const Tx& tx)
                 // This call should not throw unless it's an unexpected unrecoverable failure.
                 EnqueuedCallResult result = call_execution.execute(std::move(context));
                 tx_context.gas_used = result.gas_used;
-
-                if (collect_call_metadata) {
-                    app_logic_return_values.push_back(
-                        CallStackMetadata{ .calldata = call.calldata, .values = std::move(result.output) });
-                }
-
 
                 if (collect_call_metadata) {
                     app_logic_return_values.push_back(
@@ -284,6 +273,7 @@ TxExecutionResult TxExecution::simulate(const Tx& tx)
             .billed_gas = tx_context.gas_used,
         },
         .revert_code = tx_context.revert_code,
+        .transaction_fee = fee,
         .app_logic_return_values = std::move(app_logic_return_values),
     };
 }

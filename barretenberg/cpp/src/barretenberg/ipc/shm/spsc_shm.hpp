@@ -161,9 +161,6 @@ class SpscShm {
      */
     void wakeup_all();
 
-    // Wake all blocked threads (for graceful shutdown)
-    void wakeup_all();
-
   private:
     // Private constructor for create/connect factories
     SpscShm(int fd, size_t map_len, SpscCtrl* ctrl, uint8_t* buf);

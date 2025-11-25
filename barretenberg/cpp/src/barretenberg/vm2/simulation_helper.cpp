@@ -311,7 +311,6 @@ EventsContainer AvmSimulationHelper::simulate_for_witgen(const ExecutionHints& h
 TxSimulationResult AvmSimulationHelper::simulate_fast(ContractDBInterface& raw_contract_db,
                                                       LowLevelMerkleDBInterface& raw_merkle_db,
                                                       const PublicSimulatorConfig& config,
-                                                      const PublicSimulatorConfig& config,
                                                       const Tx& tx,
                                                       const GlobalVariables& global_variables,
                                                       const ProtocolContracts& protocol_contracts)
@@ -397,11 +396,11 @@ TxSimulationResult AvmSimulationHelper::simulate_fast(ContractDBInterface& raw_c
         execution_id_manager, merkle_db, get_contract_instance_emitter, contract_instance_manager);
 
     std::unique_ptr<DebugLoggerInterface> debug_log_component;
-    if (config.collectDebugLogs) {
+    if (config.collect_debug_logs) {
         // TODO(fcarreiro): add debug log level?
         const DebugLogLevel debug_log_level = DebugLogLevel::INFO;
         debug_log_component = std::make_unique<DebugLogger>(
-            debug_log_level, config.maxDebugLogMemoryReads, [](const std::string& message) { info(message); });
+            debug_log_level, config.max_debug_log_memory_reads, [](const std::string& message) { info(message); });
     } else {
         debug_log_component = std::make_unique<NoopDebugLogger>();
     }
@@ -435,10 +434,11 @@ TxSimulationResult AvmSimulationHelper::simulate_fast(ContractDBInterface& raw_c
                              field_gt,
                              poseidon2,
                              tx_event_emitter,
+                             config.skip_fee_enforcement,
                              config.collect_call_metadata);
 
     PublicInputsBuilder public_inputs_builder;
-    public_inputs_builder.extract_inputs(tx, global_variables, protocol_contracts, config.proverId, raw_merkle_db);
+    public_inputs_builder.extract_inputs(tx, global_variables, protocol_contracts, config.prover_id, raw_merkle_db);
 
     // This triggers all the work.
     TxExecutionResult tx_execution_result = tx_execution.simulate(tx);
@@ -456,11 +456,9 @@ TxSimulationResult AvmSimulationHelper::simulate_fast(ContractDBInterface& raw_c
         .gas_used = tx_execution_result.gas_used,
         .revert_code = tx_execution_result.revert_code,
         .app_logic_return_values = std::move(tx_execution_result.app_logic_return_values),
-        .app_logic_return_values = std::move(tx_execution_result.app_logic_return_values),
         .logs = debug_log_component->dump_logs(),
         // Proving request data.
         .public_inputs = public_inputs_builder.build(),
-        .hints = std::nullopt, // NOTE: hints are injected by the caller.
         .hints = std::nullopt, // NOTE: hints are injected by the caller.
     };
 }
@@ -470,21 +468,17 @@ TxSimulationResult AvmSimulationHelper::simulate_fast_with_existing_ws(
     const world_state::WorldStateRevision& world_state_revision,
     world_state::WorldState& ws,
     const PublicSimulatorConfig& config,
-    const PublicSimulatorConfig& config,
     const Tx& tx,
     const GlobalVariables& global_variables,
-    const ProtocolContracts& protocol_contracts)
     const ProtocolContracts& protocol_contracts)
 {
     // Create PureRawMerkleDB with the provided WorldState instance
     PureRawMerkleDB raw_merkle_db(world_state_revision, ws);
 
-    if (config.collectHints) {
+    if (config.collect_hints) {
         auto starting_tree_roots = raw_merkle_db.get_tree_roots();
         HintingContractsDB hinting_contract_db(raw_contract_db);
         HintingRawDB hinting_merkle_db(raw_merkle_db);
-        auto result =
-            simulate_fast(hinting_contract_db, hinting_merkle_db, config, tx, global_variables, protocol_contracts);
         auto result =
             simulate_fast(hinting_contract_db, hinting_merkle_db, config, tx, global_variables, protocol_contracts);
         // TODO(MW): move to simulate_fast?
@@ -500,7 +494,6 @@ TxSimulationResult AvmSimulationHelper::simulate_fast_with_existing_ws(
     };
 
     return simulate_fast(raw_contract_db, raw_merkle_db, config, tx, global_variables, protocol_contracts);
-    return simulate_fast(raw_contract_db, raw_merkle_db, config, tx, global_variables, protocol_contracts);
 }
 
 TxSimulationResult AvmSimulationHelper::simulate_fast_with_hinted_dbs(const ExecutionHints& hints)
@@ -508,14 +501,10 @@ TxSimulationResult AvmSimulationHelper::simulate_fast_with_hinted_dbs(const Exec
     // TODO(fcarreiro): decide if we want to pass a config here.
     const PublicSimulatorConfig config{};
 
-    // TODO(fcarreiro): decide if we want to pass a config here.
-    const PublicSimulatorConfig config{};
-
     HintedRawContractDB raw_contract_db(hints);
     HintedRawMerkleDB raw_merkle_db(hints);
-
     return simulate_fast(
-        raw_contract_db, raw_merkle_db, config, hints.tx, hints.globalVariables, hints.protocolContracts);
+        raw_contract_db, raw_merkle_db, config, hints.tx, hints.global_variables, hints.protocol_contracts);
 }
 
 } // namespace bb::avm2

@@ -230,6 +230,29 @@ function pull_submodules {
   denoise "git submodule update --init --recursive --depth 1 --jobs 8"
 }
 
+function build_barretenberg {
+  pull_submodules
+
+  echo "Custom build of barretenberg dependencies..."
+  ./noir/bootstrap.sh
+  ./avm-transpiler/bootstrap.sh
+  cd barretenberg/cpp
+
+  cmake -B build \
+    --preset clang20 \
+    -DCMAKE_C_COMPILER=clang-20 \
+    -DCMAKE_CXX_COMPILER=clang++-20 \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DMULTITHREADING=ON \
+    -DENABLE_TRACY=OFF \
+    -DENABLE_WASM_BENCH=OFF \
+    -DAVM=0 \
+    -DFUZZING=OFF
+
+  cmake --build build --preset clang20
+
+}
+
 function build {
   pull_submodules
   check_toolchains

@@ -72,7 +72,7 @@ mod tests {
         let loaded_artifact = load_artifact("test_vectors/hello_world.json").unwrap();
         assert_eq!(
             loaded_artifact.noir_version,
-            "1.0.0-beta.15+83245db91dcf63420ef4bcbbd85b98f397fee663"
+            "1.0.0-beta.15+fbaa122bdeaee801e90b69fcc435aa4a4167feb7"
         );
         assert_eq!(loaded_artifact.hash, 9763453774353198784);
         assert_eq!(loaded_artifact.abi.parameters[0].name, "x");

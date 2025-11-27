@@ -1,6 +1,4 @@
 use bindgen::Builder;
-use cmake::Config;
-use needs_rebuild::{needs_rebuild, ScanOptions};
 use std::env;
 use std::path::PathBuf;
 use std::process::Command;
@@ -71,56 +69,6 @@ fn dep_include(dep_name: &str, dst: &PathBuf) -> String {
     format!("-I{}/{dep_name}", dst.join("build").join("_deps").display())
 }
 
-fn build_lib(target_os: &str) -> PathBuf {
-    // Build the C++ code using CMake and get the build directory path.
-    let dst;
-    // iOS
-    if target_os == "ios" {
-        dst = Config::new("../cpp")
-            .generator("Ninja")
-            .configure_arg("-DCMAKE_BUILD_TYPE=Release")
-            .configure_arg("-DPLATFORM=OS64")
-            .configure_arg("-DDEPLOYMENT_TARGET=15.0")
-            .configure_arg("--toolchain=../bb_rs/ios.toolchain.cmake")
-            .configure_arg("-DTRACY_ENABLE=OFF")
-            .build_target("bb")
-            .build();
-    }
-    // Android
-    else if target_os == "android" {
-        let android_home = option_env!("ANDROID_HOME").expect("ANDROID_HOME not set");
-        let ndk_version = option_env!("NDK_VERSION").expect("NDK_VERSION not set");
-
-        dst = Config::new("../cpp")
-            .generator("Ninja")
-            .configure_arg("-DCMAKE_BUILD_TYPE=Release")
-            .configure_arg("-DANDROID_ABI=arm64-v8a")
-            .configure_arg("-DANDROID_PLATFORM=android-33")
-            .configure_arg(&format!(
-                "--toolchain={}/ndk/{}/build/cmake/android.toolchain.cmake",
-                android_home, ndk_version
-            ))
-            .configure_arg("-DTRACY_ENABLE=OFF")
-            .build_target("bb")
-            .build();
-    }
-    // MacOS and other platforms
-    else {
-        let cmd = Command::new("../../bootstrap.sh")
-            .arg("build_barretenberg")
-            .output()
-            .expect("Failed to build barretenberg library");
-        if !cmd.status.success() {
-            panic!(
-                "build_cpp.sh failed with error: {}",
-                String::from_utf8_lossy(&cmd.stderr)
-            );
-        }
-        dst = PathBuf::from("../cpp");
-    }
-    dst
-}
-
 fn main() {
     // Notify Cargo to rerun this build script if `build.rs` changes
     println!("cargo:rerun-if-changed=build.rs");
@@ -129,19 +77,13 @@ fn main() {
     // of the target_os environment variable to determine the target OS.
     let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
 
-    let mut dst = PathBuf::from("../cpp");
-    let mut options = ScanOptions::new(&[
-        "**/src/barretenberg/**/*.hpp",
-        "**/src/barretenberg/**/*.cpp",
-    ]);
-    options.verbose = true;
-    if needs_rebuild(&dst, &dst.join("build/lib/libbarretenberg.a"), options)
-        .expect("Failed to check if rebuild is needed")
-    {
-        println!("cargo:warning=Rebuilding barretenberg C++ library...");
-        dst = build_lib(&target_os);
-    } else {
-        println!("cargo:warning=barretenberg C++ library is up to date, no rebuild needed.");
+    let dst = PathBuf::from("../cpp");
+    let libbarretenberg_path = dst.join("build/lib/libbarretenberg.a");
+
+    if !libbarretenberg_path.exists() {
+        println!("cargo:warning=libbarretenberg.a not found at expected path: {}", libbarretenberg_path.display());
+        println!("cargo:warning=Ensure that barretenberg C++ library is built before running this build script.");
+        panic!("Build static libraries with ../../bootstrap.sh build_barretenberg");
     }
 
     // Add the library search path for Rust to find during linking.

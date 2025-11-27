@@ -8,6 +8,7 @@ use std::os::raw::c_void;
 use std::path::Path;
 use std::ptr;
 use std::ptr::null;
+use crate::barretenberg_api::bindgen::bbapi_cleanup;
 // This is not used for now, but may replace the acir functions later
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -251,6 +252,7 @@ fn execute_bb_msgpack_command(command: &[u8]) -> (bool, Vec<u8>) {
         let mut out_len: usize = 0;
 
         bindgen::bbapi_set_verbose_logging(true);
+        bindgen::bbapi_set_debug_logging(true);
         // Definitely don't do this every time. TODO - load CRS once.
         if !bindgen::bbapi_init(null()) {
             panic!("Failed to initialize bbapi");
@@ -264,14 +266,16 @@ fn execute_bb_msgpack_command(command: &[u8]) -> (bool, Vec<u8>) {
         );
 
         // Convert the output to a Vec<u8>
-        if out_ptr.is_null() || out_len == 0 {
+        let result = if out_ptr.is_null() || out_len == 0 {
             (false, b"Empty response from bbapi".to_vec())
         } else {
             let result = std::slice::from_raw_parts(out_ptr, out_len).to_vec();
             // Free the C-allocated memory immediately. We have a copy of the data in our Vec.
             bindgen::bbapi_free_result(out_ptr as *mut c_void);
             (is_msgpack, result)
-        }
+        };
+        bbapi_cleanup();
+        result
     }
 }
 

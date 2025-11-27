@@ -1,5 +1,5 @@
 use acir::FieldElement;
-use noirc_abi::{input_parser::InputValue, AbiVisibility, InputMap};
+use noirc_abi::{input_parser::InputValue, InputMap};
 
 pub struct Inputs {
     inputs: InputMap,

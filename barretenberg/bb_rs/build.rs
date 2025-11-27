@@ -259,25 +259,10 @@ fn main() {
         .allowlist_function("bbapi_init")
         .allowlist_function("bbapi_cleanup")
         .allowlist_function("bbapi_free_result")
-        .allowlist_function("srs_init_srs")
         .allowlist_function("acir_get_circuit_sizes")
-        .allowlist_function("acir_serialize_proof_into_fields")
-        .allowlist_function("acir_serialize_verification_key_into_fields")
-        .allowlist_function("acir_prove_ultra_honk")
-        .allowlist_function("acir_prove_ultra_keccak_honk")
-        .allowlist_function("acir_prove_ultra_keccak_zk_honk")
-        .allowlist_function("acir_prove_aztec_client")
-        .allowlist_function("acir_verify_ultra_honk")
-        .allowlist_function("acir_verify_ultra_keccak_honk")
-        .allowlist_function("acir_verify_ultra_keccak_zk_honk")
-        .allowlist_function("acir_verify_aztec_client")
-        .allowlist_function("acir_write_vk_ultra_honk")
-        .allowlist_function("acir_write_vk_ultra_keccak_honk")
-        .allowlist_function("acir_write_vk_ultra_keccak_zk_honk")
-        .allowlist_function("acir_prove_and_verify_ultra_honk")
-        .allowlist_function("bbapi")
-        // Tell cargo to invalidate the built crate whenever any of the included header files changed.
-        .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
+        // Tell cargo to invalidate the built crate whenever any of the included header files changed (redundant due
+        // to needs_rebuild above, but safe to keep).
+        //.parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         // Finish the builder and generate the bindings.
         .generate()
         // Unwrap the Result and panic on failure.

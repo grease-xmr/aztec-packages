@@ -6,12 +6,10 @@ use log::*;
 use nargo::foreign_calls::DefaultForeignCallBuilder;
 use nargo::ops::debug::load_workspace_files;
 use nargo::ops::{compile_program, execute_program};
-use nargo::{insert_all_files_under_path, parse_all, prepare_package};
 use nargo_toml::{get_package_manifest, resolve_workspace_from_toml, PackageSelection};
 use noirc_abi::input_parser::InputValue;
-use noirc_abi::InputMap;
 use noirc_artifacts::program::ProgramArtifact;
-use noirc_driver::{compile_main, CompileOptions, CompiledProgram, NOIR_ARTIFACT_VERSION_STRING};
+use noirc_driver::{CompileOptions, NOIR_ARTIFACT_VERSION_STRING};
 use std::path::Path;
 use thiserror::Error;
 
@@ -167,10 +165,9 @@ pub struct ExecutionResult {
 
 #[cfg(test)]
 mod tests {
-    use crate::noir_api::artifacts::{load_artifact, save_binary};
+    use crate::noir_api::artifacts::{load_artifact};
     use crate::noir_api::inputs::Inputs;
     use noirc_driver::CompileOptions;
-    use std::fs;
 
     #[test]
     fn compile_noir() {

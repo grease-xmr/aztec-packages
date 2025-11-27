@@ -127,17 +127,6 @@ pub struct CircuitComputeVkResponse {
     pub hash: Vec<u8>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct VkAsFields {
-    #[serde(with = "serde_bytes")]
-    pub verification_key: Vec<u8>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct VkAsFieldsResponse {
-    pub fields: Vec<Uint256>,
-}
-
 // Error handling
 #[derive(Debug, thiserror::Error)]
 pub enum BbApiError {
@@ -284,39 +273,6 @@ fn execute_bb_msgpack_command(command: &[u8]) -> (bool, Vec<u8>) {
             (is_msgpack, result)
         }
     }
-}
-
-// Helper functions to convert between different representations
-pub fn pack_proof_into_fields(vec_u8: &[u8]) -> Vec<Uint256> {
-    vec_u8
-        .chunks(32)
-        .map(|chunk| {
-            let mut array = [0u8; 32];
-            array.copy_from_slice(chunk);
-            Uint256(array)
-        })
-        .collect()
-}
-
-pub fn fields_to_bytes(fields: &[[u8; 32]]) -> Vec<u8> {
-    fields
-        .iter()
-        .flat_map(|field| field.iter().copied())
-        .collect()
-}
-
-pub fn pack_proof_into_biguints(vec_u8: &[u8]) -> Vec<BigUint> {
-    vec_u8
-        .chunks(32)
-        .map(|chunk| BigUint::from_bytes_be(chunk))
-        .collect()
-}
-
-pub fn from_biguints_to_hex_strings(biguints: &[BigUint]) -> Vec<String> {
-    biguints
-        .iter()
-        .map(|biguint| format!("0x{:064x}", biguint))
-        .collect()
 }
 
 // High-level API functions using the new command-based approach
@@ -545,19 +501,4 @@ pub fn verify_ultra_keccak_zk_honk(proof: CircuitProveResponse) -> Result<bool, 
         response.verified
     );
     Ok(response.verified)
-}
-
-/// Convert VK to field elements
-pub fn vk_as_fields_ultra_honk(vk_buf: &[u8]) -> Result<VkAsFieldsResponse, BbApiError> {
-    let command = VkAsFields {
-        verification_key: vk_buf.to_vec(),
-    };
-
-    let response = bbapi_command::<VkAsFields, VkAsFieldsResponse>("VkAsFields", &command)?;
-    Ok(response)
-}
-
-/// Convert proof to hex strings
-pub fn proof_as_fields_ultra_honk(proof_buf: &[u8]) -> Vec<String> {
-    from_biguints_to_hex_strings(&pack_proof_into_biguints(&proof_buf))
 }

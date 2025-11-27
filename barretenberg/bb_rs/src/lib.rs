@@ -3,6 +3,12 @@ pub mod noir_api;
 
 pub use barretenberg_api::bbapi::{CircuitComputeVk, CircuitProve, CircuitVerify};
 
+pub mod circuits {
+    pub use crate::barretenberg_api::acir::{
+        acir_get_slow_low_memory, acir_set_slow_low_memory, get_circuit_sizes, CircuitSizes,
+    };
+}
+
 pub mod ultra_honk {
     pub use crate::barretenberg_api::bbapi::{
         get_ultra_honk_verification_key as get_vk, prove_ultra_honk as prove,

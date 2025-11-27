@@ -1,4 +1,4 @@
-use crate::barretenberg_api::utils::{SerializeBuffer};
+use crate::barretenberg_api::utils::SerializeBuffer;
 use std::ffi::c_void;
 
 pub type Ptr = *mut c_void;
@@ -14,7 +14,6 @@ impl SerializeBuffer for Fr {
     }
 }
 
-
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Fq {
     pub data: [u8; 32],
@@ -25,7 +24,6 @@ impl SerializeBuffer for Fq {
         self.data.to_vec()
     }
 }
-
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Point {
@@ -42,4 +40,3 @@ impl SerializeBuffer for Point {
             .collect()
     }
 }
-

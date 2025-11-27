@@ -165,7 +165,7 @@ pub struct ExecutionResult {
 
 #[cfg(test)]
 mod tests {
-    use crate::noir_api::artifacts::{load_artifact};
+    use crate::noir_api::artifacts::load_artifact;
     use crate::noir_api::inputs::Inputs;
     use noirc_driver::CompileOptions;
 

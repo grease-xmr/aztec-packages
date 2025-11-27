@@ -1,5 +1,5 @@
-use super::{bindgen};
-use crate::barretenberg_api::utils::{SerializeBuffer};
+use super::bindgen;
+use crate::barretenberg_api::utils::SerializeBuffer;
 use std::env;
 
 #[derive(Debug)]

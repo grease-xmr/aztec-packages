@@ -1,15 +1,14 @@
 use acir::FieldElement;
 use noirc_abi::{input_parser::InputValue, InputMap};
 
+#[derive(Debug, Default)]
 pub struct Inputs {
     inputs: InputMap,
 }
 
 impl Inputs {
     pub fn new() -> Self {
-        Self {
-            inputs: InputMap::new(),
-        }
+        Self::default()
     }
 
     pub fn add_field(mut self, name: impl AsRef<str>, value: impl Into<FieldElement>) -> Self {

@@ -30,6 +30,4 @@ pub mod ultra_honk_keccak_zk {
     };
 }
 
-pub use barretenberg_api::acir::{acir_get_slow_low_memory, CircuitSizes};
-
 pub use barretenberg_api::models;

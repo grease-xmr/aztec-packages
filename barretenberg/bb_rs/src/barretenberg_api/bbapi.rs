@@ -1,4 +1,5 @@
 use super::bindgen;
+use crate::barretenberg_api::bindgen::bbapi_cleanup;
 use crate::noir_api::artifacts::{load_binary, save_binary};
 use log::*;
 use num_bigint::BigUint;
@@ -8,7 +9,6 @@ use std::os::raw::c_void;
 use std::path::Path;
 use std::ptr;
 use std::ptr::null;
-use crate::barretenberg_api::bindgen::bbapi_cleanup;
 // This is not used for now, but may replace the acir functions later
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -252,7 +252,7 @@ fn execute_bb_msgpack_command(command: &[u8]) -> (bool, Vec<u8>) {
         let mut out_len: usize = 0;
 
         bindgen::bbapi_set_verbose_logging(true);
-        bindgen::bbapi_set_debug_logging(true);
+        bindgen::bbapi_set_debug_logging(log_enabled!(Level::Debug));
         // Definitely don't do this every time. TODO - load CRS once.
         if !bindgen::bbapi_init(null()) {
             panic!("Failed to initialize bbapi");

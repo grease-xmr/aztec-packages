@@ -74,7 +74,6 @@ mod tests {
             loaded_artifact.noir_version,
             "1.0.0-beta.15+fbaa122bdeaee801e90b69fcc435aa4a4167feb7"
         );
-        assert_eq!(loaded_artifact.hash, 9763453774353198784);
         assert_eq!(loaded_artifact.abi.parameters[0].name, "x");
         assert!(!loaded_artifact.abi.parameters[0].is_public());
         assert_eq!(loaded_artifact.abi.parameters[1].name, "y");

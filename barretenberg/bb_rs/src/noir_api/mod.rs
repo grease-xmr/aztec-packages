@@ -1,8 +1,9 @@
 mod api;
 pub mod artifacts;
+mod inputs;
 
 // exports
-pub use api::{compile, NoirError};
+pub use api::{compile, execute, CompilationResult, ExecutionResult, NoirError};
 
 // re-export
 pub use acir::circuit::Program;

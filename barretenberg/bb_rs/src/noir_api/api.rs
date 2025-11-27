@@ -1,14 +1,17 @@
-use fm::FileManager;
+use crate::noir_api::inputs::Inputs;
+use acir::native_types::WitnessStack;
+use acir::FieldElement;
+use bn254_blackbox_solver::Bn254BlackBoxSolver;
 use log::*;
-use nargo::ops::compile_program;
+use nargo::foreign_calls::DefaultForeignCallBuilder;
 use nargo::ops::debug::load_workspace_files;
-use nargo::{
-    insert_all_files_for_workspace_into_file_manager, insert_all_files_under_path, parse_all,
-    prepare_package,
-};
+use nargo::ops::{compile_program, execute_program};
+use nargo::{insert_all_files_under_path, parse_all, prepare_package};
 use nargo_toml::{get_package_manifest, resolve_workspace_from_toml, PackageSelection};
+use noirc_abi::input_parser::InputValue;
+use noirc_abi::InputMap;
 use noirc_artifacts::program::ProgramArtifact;
-use noirc_driver::{check_crate, compile_main, CompileOptions, NOIR_ARTIFACT_VERSION_STRING};
+use noirc_driver::{compile_main, CompileOptions, CompiledProgram, NOIR_ARTIFACT_VERSION_STRING};
 use std::path::Path;
 use thiserror::Error;
 
@@ -97,32 +100,77 @@ pub fn compile(
     Ok(CompilationResult { program, warnings })
 }
 
-// pub fn execute(
-//     program: &ProgramArtifact,
-//     inputs_map: WitnessMap<FieldElement>,
-//     pedantic_solving: bool,
-// ) -> Result<WitnessStack<FieldElement>, NoirError> {
-//     // Execute
-//     let mut foreign_call_executor = DefaultForeignCallBuilder::default()
-//         .with_output(Vec::<u8>::new())
-//         .with_mocks(false)
-//         .build();
-//
-//     let witness_stack = execute_program(
-//         &program,
-//         inputs_map,
-//         &Bn254BlackBoxSolver(pedantic_solving),
-//         &mut foreign_call_executor,
-//     ).map_err(|e| NoirError::Execution(e.to_string()))?;
-//
-//
-//
-//     Ok(witness_stack)
-// })
+/// Executes a circuit to calculate its return value
+///
+/// This function is equivalent to the nargo CLI's `execute` command.
+///
+/// # Arguments
+/// - `program`: The compiled Noir program to execute.
+/// - `inputs_map`: A map of input values to provide to the program during execution.
+/// - `pedantic_solving`: If true, the solver will perform additional checks during execution.
+///
+/// # Returns
+/// - `WitnessStack<FieldElement>`: The resulting witness stack after execution.
+pub fn execute(
+    program: &ProgramArtifact,
+    inputs: Inputs,
+    pedantic_solving: bool,
+) -> Result<ExecutionResult, NoirError> {
+    // Execute
+    let mut foreign_call_executor = DefaultForeignCallBuilder::default()
+        .with_output(Vec::<u8>::new())
+        .with_mocks(false)
+        .build();
+
+    let blackbox_solver = Bn254BlackBoxSolver(pedantic_solving);
+
+    let initial_witness = program
+        .abi
+        .encode(inputs.as_input_map(), None)
+        .map_err(|e| {
+            NoirError::Execution(format!(
+                "Noir program execution failed when encoding inputs: {e}"
+            ))
+        })?;
+
+    let witness_stack = execute_program(
+        &program.bytecode,
+        initial_witness,
+        &blackbox_solver,
+        &mut foreign_call_executor,
+    )
+    .map_err(|e| NoirError::Execution(format!("Witness execution failed: {e}")))?;
+
+    let main_witness = &witness_stack
+        .peek()
+        .ok_or_else(|| NoirError::Execution("No main witness".to_string()))?
+        .witness;
+
+    let (_, return_value) = program
+        .abi
+        .decode(main_witness)
+        .map_err(|e| NoirError::Execution(format!("Decoding actual return value failed: {e}")))?;
+
+    Ok(ExecutionResult {
+        witness_stack,
+        return_value,
+    })
+}
+
+/// The result of running a circuit with the given inputs.
+pub struct ExecutionResult {
+    /// The witness stack resulting from the execution.
+    pub witness_stack: WitnessStack<FieldElement>,
+    /// The return value from the execution, if any.
+    pub return_value: Option<InputValue>,
+}
 
 #[cfg(test)]
 mod tests {
+    use crate::noir_api::artifacts::{load_artifact, save_binary};
+    use crate::noir_api::inputs::Inputs;
     use noirc_driver::CompileOptions;
+    use std::fs;
 
     #[test]
     fn compile_noir() {
@@ -131,5 +179,19 @@ mod tests {
         let compile_result =
             super::compile("test_vectors/hello_world", settings).expect("Noir compilation failed.");
         assert_eq!(compile_result.warnings.len(), 0);
+    }
+
+    #[test]
+    fn execute_noir() {
+        let artifact =
+            load_artifact("test_vectors/hello_world.json").expect("Loading artifact failed");
+        let inputs = Inputs::new().add_field("x", 1u64).add_field("y", 2u64);
+        let result = super::execute(&artifact, inputs, false).expect("Noir execution failed");
+        let bytes = &result
+            .witness_stack
+            .serialize()
+            .expect("serialization failed");
+        assert_eq!(bytes.len(), 95, "Witness size should be 95 bytes");
+        assert!(result.return_value.is_none());
     }
 }

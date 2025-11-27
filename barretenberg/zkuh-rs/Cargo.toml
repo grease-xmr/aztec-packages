@@ -1,6 +1,6 @@
 [package]
 name = "zkuh-rs"
-version = "1.0.0"
+version = "1.0.1"
 edition = "2021"
 authors = ["CjS77"]
 
@@ -28,7 +28,7 @@ log = "0.4.28"
 [build-dependencies]
 bindgen = "0.72.1"
 cmake = "0.1.50"
-needs_rebuild = {  version = "1.2", path = "../../../../projects/detect_change" }
+needs_rebuild = {  version = "1.2"}
 
 [dev-dependencies]
 env_logger = "0.11.8"

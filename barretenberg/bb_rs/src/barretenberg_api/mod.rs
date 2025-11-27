@@ -3,9 +3,6 @@ pub mod acir;
 pub mod bbapi;
 pub mod models;
 
-#[allow(unused)]
-mod untested;
-
 #[cfg(test)]
 pub mod tests;
 

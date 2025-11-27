@@ -259,20 +259,7 @@ fn main() {
         .allowlist_function("bbapi_init")
         .allowlist_function("bbapi_cleanup")
         .allowlist_function("bbapi_free_result")
-        .allowlist_function("poseidon2_hash")
-        .allowlist_function("poseidon2_hashes")
-        .allowlist_function("poseidon2_permutation")
-        // Grumpkin curve functions
-        .allowlist_function("ecc_grumpkin__mul")
-        .allowlist_function("ecc_grumpkin__add")
-        .allowlist_function("ecc_grumpkin__batch_mul")
-        .allowlist_function("ecc_grumpkin__get_random_scalar_mod_circuit_modulus")
-        .allowlist_function("ecc_grumpkin__reduce512_buffer_mod_circuit_modulus")
-        // SRS functions
         .allowlist_function("srs_init_srs")
-        .allowlist_function("srs_init_grumpkin_srs")
-        .allowlist_function("test_threads")
-        .allowlist_function("common_init_slab_allocator")
         .allowlist_function("acir_get_circuit_sizes")
         .allowlist_function("acir_serialize_proof_into_fields")
         .allowlist_function("acir_serialize_verification_key_into_fields")
@@ -288,9 +275,8 @@ fn main() {
         .allowlist_function("acir_write_vk_ultra_keccak_honk")
         .allowlist_function("acir_write_vk_ultra_keccak_zk_honk")
         .allowlist_function("acir_prove_and_verify_ultra_honk")
-        .allowlist_function("create_avm2_recursion_constraints_goblin")
-        // Tell cargo to invalidate the built crate whenever any of the included header files changed.
         .allowlist_function("bbapi")
+        // Tell cargo to invalidate the built crate whenever any of the included header files changed.
         .parse_callbacks(Box::new(bindgen::CargoCallbacks::new()))
         // Finish the builder and generate the bindings.
         .generate()

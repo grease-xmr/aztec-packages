@@ -1,6 +1,6 @@
 {
-  "noir_version": "1.0.0-beta.15+83245db91dcf63420ef4bcbbd85b98f397fee663",
-  "hash": "9763453774353198784",
+  "noir_version": "1.0.0-beta.15+fbaa122bdeaee801e90b69fcc435aa4a4167feb7",
+  "hash": "6572548825284619657",
   "abi": {
     "parameters": [
       {
@@ -22,11 +22,11 @@
     "error_types": {}
   },
   "bytecode": "H4sIAAAAAAAA/6VSsQrCMBC9pCq6ibR7R90UP0EEJ3F0ERGbIYNFQik49hPEH/ArRD+nm6OLu4J3kMYIib3lldd7914uYfCpBuJuI1P+Rm7wDL6LemJwKqb3DpO5KkfnwXUxvRTFctUf32eH2/44KZ+nBzbHbnMr2XidcNwzINcG+OgqpmBfLnFdxEQqsc1kLtYyzYXKOsi3ESNNF4D7uUkf/qeHloWLtG+aSz62nblWgNi0/DMfbGD4EjJ/f/Yrh+3eeoihxtE+Xl760t9tAwAA",
-  "debug_symbols": "dY/BCoMwDIbfJeceFObFVxlDao0SCGmJ7WCI774ournDLk2Tv9/f/AsM2JepIxnjDO19gV6JmaaOY/CZoth0WR2cbZcV0UZw0Y1KXlEytFKYHTw9l/3RnLzsNXs1tXKAMlg1w5EYt9vqvnT1H701B9vUH7gx+mGdD6Q/+0IFbe2gtnPdLJV8z3gkGYuES7D8SqdyRk8aAw5FcTPdNfvmDQ==",
+  "debug_symbols": "dY9NCoMwEIXvMussFOrGq5QiMY4SGCZhTApFcveOYlq76Cbz8/K95G0w4ZiXwfMcVujvG4ziifwyUHA2+cC63YqBOg5JEHUFF12paAU5Qc+ZyMDTUj4urdHyUZMVVRsDyJNWNZw94d4V86Wb/+itO9mu/cDalodO1nn5+S800LcGWj3LbinejoRnkjmzuwRLr1iVGj1KcDhlwd300PSZNw==",
   "file_map": {
-    "50": {
+    "51": {
       "source": "fn main(x: Field, y: pub Field) {\n    assert(x != y);\n}",
-      "path": ""
+      "path": "test_vectors/hello_world/src/main.nr"
     }
   },
   "expression_width": {

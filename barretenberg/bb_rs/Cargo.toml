@@ -7,8 +7,14 @@ authors = ["Bartosz Nowak", "Théo Madzou"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-noirc_artifacts = { version = "1.0.0-beta.15", path = "../../noir/noir-repo/tooling/noirc_artifacts" }
 acir = { version = "1.0.0-beta.15", path = "../../noir/noir-repo/acvm-repo/acir" }
+bn254_blackbox_solver = { version = "1.0.0-beta.15", path = "../../noir/noir-repo/acvm-repo/bn254_blackbox_solver" }
+noirc_artifacts = { version = "1.0.0-beta.15", path = "../../noir/noir-repo/tooling/noirc_artifacts" }
+fm = { version = "1.0.0-beta.15", path = "../../noir/noir-repo/compiler/fm" }
+nargo = { version = "1.0.0-beta.15", path = "../../noir/noir-repo/tooling/nargo" }
+nargo_toml = { version = "1.0.0-beta.15", path = "../../noir/noir-repo/tooling/nargo_toml" }
+noirc_abi = { version = "1.0.0-beta.15", path = "../../noir/noir-repo/tooling/noirc_abi" }
+noirc_driver = { version = "1.0.0-beta.15", path = "../../noir/noir-repo/compiler/noirc_driver" }
 
 flate2 = {version = "1.1"}
 num-bigint = "0.4"

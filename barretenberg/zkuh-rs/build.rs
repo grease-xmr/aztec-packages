@@ -106,9 +106,10 @@ fn build_lib(target_os: &str) -> PathBuf {
     }
     // MacOS and other platforms
     else {
-        let cmd = Command::new("./scripts/build_bb.sh")
+        let cmd = Command::new("../../bootstrap.sh")
+            .arg("build_barretenberg")
             .output()
-            .expect("Failed to execute build_cpp.sh");
+            .expect("Failed to build barretenberg library");
         if !cmd.status.success() {
             panic!(
                 "build_cpp.sh failed with error: {}",

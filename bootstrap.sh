@@ -252,7 +252,7 @@ function build_barretenberg {
   cmake --build build --preset clang20
 
   # Copy compiled artifacts to zkuh-rs/lib for packaging.
-  cd ../zkuh-rs/libs
+  cd ../zkuh-rs/libs || exit 1
   cp ../../cpp/build/lib/libbarretenberg.a ./
   cp ../../cpp/build/lib/libbbapi.a ./
   echo "Creating checksums for Barretenberg static libraries..."

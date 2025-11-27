@@ -83,7 +83,7 @@ fn main() {
     if !libbarretenberg_path.exists() {
         println!("cargo:warning=libbarretenberg.a not found at expected path: {}", libbarretenberg_path.display());
         println!("cargo:warning=Ensure that barretenberg C++ library is built before running this build script.");
-        println!("cargo:warning=You can build it by running ../../bootstrap.sh build_barretenberg");
+        panic!("Build static libraries with ../../bootstrap.sh build_barretenberg");
     }
 
     // Add the library search path for Rust to find during linking.

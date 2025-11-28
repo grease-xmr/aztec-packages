@@ -4,7 +4,9 @@ mod inputs;
 
 // exports
 pub use api::{compile, execute, CompilationResult, ExecutionResult, NoirError};
-pub use inputs::Inputs;
+pub use inputs::{FieldInput, InputError, Inputs, PointInput};
+
 // re-export
 pub use acir::circuit::Program;
 pub use noirc_artifacts::program::ProgramArtifact;
+pub use noirc_driver::CompileOptions;

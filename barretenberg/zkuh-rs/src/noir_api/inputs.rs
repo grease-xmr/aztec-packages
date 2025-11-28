@@ -30,6 +30,12 @@ impl InputError {
     }
 }
 
+impl From<Infallible> for InputError {
+    fn from(x: Infallible) -> Self {
+        match x {}
+    }
+}
+
 //------------------------ Inputs - Wrapper around InputMap -----------------------
 
 #[derive(Debug, Default)]
@@ -42,11 +48,55 @@ impl Inputs {
         Self::default()
     }
 
-    pub fn add_field(mut self, name: impl AsRef<str>, value: impl Into<FieldInput>) -> Self {
-        let value = InputValue::Field(value.into().0);
-        let name = String::from(name.as_ref());
-        self.inputs.insert(name, value);
+    pub fn try_add_field<T>(mut self, name: &str, value: T) -> Result<Self, (Self, InputError)>
+    where
+        T: TryInto<FieldInput, Error = InputError>,
+    {
+        match value.try_into() {
+            Ok(field_input) => {
+                let value: InputValue = field_input.into();
+                let name = String::from(name);
+                self.inputs.insert(name, value);
+                Ok(self)
+            }
+            Err(e) => Err((self, e.into())),
+        }
+    }
+
+    pub fn add_field<T: Into<FieldInput>>(mut self, name: &str, value: T) -> Self {
+        let v = value.into();
+        self.inputs.insert(String::from(name), v.into());
         self
+    }
+
+    pub fn add<T>(mut self, name: impl AsRef<str>, value: T) -> Result<Self, (Self, InputError)>
+    where
+        T: ToInputValue,
+        T::Error: Into<InputError>,
+    {
+        match value.to_input_value() {
+            Ok(v) => {
+                let name = String::from(name.as_ref());
+                self.inputs.insert(name, v);
+                Ok(self)
+            }
+            Err(e) => Err((self, e.into())),
+        }
+    }
+
+    pub fn add_point<T>(mut self, name: &str, x: T, y: T) -> Result<Self, (Self, InputError)>
+    where
+        T: TryInto<FieldInput>,
+        T::Error: Into<InputError>,
+    {
+        match PointInput::new(x, y) {
+            Ok(point) => {
+                let value: InputValue = point.into();
+                self.inputs.insert(String::from(name), value);
+                Ok(self)
+            }
+            Err(e) => Err((self, e.into())),
+        }
     }
 
     pub fn as_input_map(&self) -> &InputMap {
@@ -319,5 +369,30 @@ mod test {
 
         let val: InputValue = p1.into();
         assert!(matches!(val, InputValue::Struct(_)));
+    }
+
+    #[test]
+    fn input_map() {
+        let inputs = Inputs::new()
+            .try_add_field(
+                "a_1",
+                "70143195093839929636068986763442859911856008756585124285077086015668936144",
+            )
+            .expect("Failed to add decimal field")
+            .add_field(
+                "challenge",
+                [
+                    210u8, 156, 128, 245, 232, 124, 124, 171, 13, 76, 166, 149, 132, 86, 239, 144,
+                    111, 194, 164, 150, 102, 99, 216, 211, 170, 244, 216, 145, 101, 64, 210, 37,
+                ],
+            )
+            .add_point(
+                "T0",
+                "0x0ef59b243ee8819f82a6da86c875508d0e786c7453ef791beae4fcf0ae88c933",
+                "0x2a8a23239d91f7c2ff94c2b094bb91ff6751c03b76fd69a8770186628753ad4f",
+            )
+            .expect("Failed to create input map");
+        let input_map = inputs.as_input_map();
+        assert_eq!(input_map.len(), 3);
     }
 }

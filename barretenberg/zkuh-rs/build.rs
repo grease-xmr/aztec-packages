@@ -1,9 +1,9 @@
 use bindgen::Builder;
 use cmake::{build, Config};
+use needs_rebuild::{needs_rebuild, ScanOptions};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::{env, fs};
-use needs_rebuild::{needs_rebuild, ScanOptions};
 
 /// Fix duplicate type definitions in the generated bindings file
 /// It's known bug with bindgen that generates duplicate type definitions

@@ -5,6 +5,12 @@ edition = "2021"
 authors = ["CjS77"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[features]
+default = ["prebuild"]
+# Uses prebuilt libraries and bindings.rs for linking
+prebuild = []
+# Build the C++ library from source and generates bindings.rs at build time
+buildlib = []
 
 [dependencies]
 acir = { version = "1.0.0-beta.15", path = "../../noir/noir-repo/acvm-repo/acir" }
@@ -27,6 +33,8 @@ log = "0.4.28"
 
 [build-dependencies]
 bindgen = "0.72.1"
+cmake = "0.1.50"
+needs_rebuild = {  version = "1.2"}
 
 [dev-dependencies]
 env_logger = "0.11.8"

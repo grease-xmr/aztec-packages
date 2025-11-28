@@ -1,7 +1,9 @@
 use bindgen::Builder;
-use std::env;
-use std::path::PathBuf;
+use cmake::{build, Config};
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::{env, fs};
+use needs_rebuild::{needs_rebuild, ScanOptions};
 
 /// Fix duplicate type definitions in the generated bindings file
 /// It's known bug with bindgen that generates duplicate type definitions
@@ -65,34 +67,69 @@ fn fix_duplicate_bindings(bindings_file: &PathBuf) {
     }
 }
 
-fn dep_include(dep_name: &str, dst: &PathBuf) -> String {
+fn dep_include(dep_name: &str, dst: &Path) -> String {
     format!("-I{}/{dep_name}", dst.join("build").join("_deps").display())
 }
 
-fn main() {
-    // Notify Cargo to rerun this build script if `build.rs` changes
-    println!("cargo:rerun-if-changed=build.rs");
+fn build_lib(target_os: &str) -> PathBuf {
+    // Build the C++ code using CMake and get the build directory path.
+    let dst;
+    // iOS
+    if target_os == "ios" {
+        dst = Config::new("../cpp")
+            .generator("Ninja")
+            .configure_arg("-DCMAKE_BUILD_TYPE=Release")
+            .configure_arg("-DPLATFORM=OS64")
+            .configure_arg("-DDEPLOYMENT_TARGET=15.0")
+            .configure_arg("--toolchain=../bb_rs/ios.toolchain.cmake")
+            .configure_arg("-DTRACY_ENABLE=OFF")
+            .build_target("bb")
+            .build();
+    }
+    // Android
+    else if target_os == "android" {
+        let android_home = option_env!("ANDROID_HOME").expect("ANDROID_HOME not set");
+        let ndk_version = option_env!("NDK_VERSION").expect("NDK_VERSION not set");
 
-    // cfg!(target_os = "<os>") does not work so we get the value
-    // of the target_os environment variable to determine the target OS.
-    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
-
-    let dst = PathBuf::from("../cpp");
-    let libbarretenberg_path = dst.join("build/lib/libbarretenberg.a");
-
-    if !libbarretenberg_path.exists() {
-        println!("cargo:warning=libbarretenberg.a not found at expected path: {}", libbarretenberg_path.display());
-        println!("cargo:warning=Ensure that barretenberg C++ library is built before running this build script.");
-        panic!("Build static libraries with ../../bootstrap.sh build_barretenberg");
+        dst = Config::new("../cpp")
+            .generator("Ninja")
+            .configure_arg("-DCMAKE_BUILD_TYPE=Release")
+            .configure_arg("-DANDROID_ABI=arm64-v8a")
+            .configure_arg("-DANDROID_PLATFORM=android-33")
+            .configure_arg(&format!(
+                "--toolchain={}/ndk/{}/build/cmake/android.toolchain.cmake",
+                android_home, ndk_version
+            ))
+            .configure_arg("-DTRACY_ENABLE=OFF")
+            .build_target("bb")
+            .build();
+    }
+    // MacOS and other platforms
+    else {
+        let cmd = Command::new("../../bootstrap.sh")
+            .arg("build_barretenberg")
+            .output()
+            .expect("Failed to build barretenberg library");
+        if !cmd.status.success() {
+            panic!(
+                "build_cpp.sh failed with error: {}",
+                String::from_utf8_lossy(&cmd.stderr)
+            );
+        }
+        dst = PathBuf::from("../cpp");
     }
 
+    dst
+}
+
+fn link_libraries(libs: &Path) {
     // Add the library search path for Rust to find during linking.
-    println!("cargo:rustc-link-search={}/build/lib", dst.display());
+    println!("cargo:rustc-link-search={}", libs.display());
 
     // Add the library search path for libdeflate
     println!(
-        "cargo:rustc-link-search={}/build/_deps/libdeflate-build",
-        dst.display()
+        "cargo:rustc-link-search={}/libdeflate-build",
+        libs.display()
     );
 
     // Link the `barretenberg` static library.
@@ -112,87 +149,93 @@ fn main() {
     } else {
         println!("cargo:rustc-link-lib=stdc++");
     }
+}
 
-    // Copy the headers to the build directory.
-    // Fix an issue where the headers are not included in the build.
-    Command::new("sh")
-        .args(&[
-            "copy-headers.sh",
-            &format!("{}/build/include", dst.display()),
-        ])
-        .output()
-        .unwrap();
+fn copy_handcrafted_bindings_to_out(handcrafted: &Path, out_dir: &Path) {
+    if !handcrafted.exists() {
+        panic!(
+            "Hand-crafted bindings not found at `{}`",
+            handcrafted.display()
+        );
+    }
+    let dest = out_dir.join("bindings.rs");
+    fs::create_dir_all(out_dir).expect("Failed to create OUT_DIR");
+    fs::copy(handcrafted, &dest).expect("Failed to copy hand-crafted bindings to OUT_DIR");
+    println!(
+        "cargo:warning=Copied hand-crafted bindings `{}` -> `{}`",
+        handcrafted.display(),
+        dest.display()
+    );
+}
 
+fn generate_bindings(target_os: String, src: &Path) -> PathBuf {
     let mut builder = Builder::default();
-
     if target_os == "android" {
         let android_home = option_env!("ANDROID_HOME").expect("ANDROID_HOME not set");
         let ndk_version = option_env!("NDK_VERSION").expect("NDK_VERSION not set");
         let host_tag = option_env!("HOST_TAG").expect("HOST_TAG not set");
 
         builder = builder
-        // Add the include path for headers.
-        .clang_args([
-            "-std=c++20",
-            "-xc++",
-            &format!("-I{}/build/include", dst.display()),
-            // Dependencies' include paths needs to be added manually.
-            &format!("-I{}/build/_deps/msgpack-c/src/msgpack-c/include", dst.display()),
-            //&format!("-I{}/build/_deps/libdeflate-src", dst.display()),
-            &format!("-I{}/ndk/{}/toolchains/llvm/prebuilt/{}/sysroot/usr/include/c++/v1", android_home, ndk_version, host_tag),
-            &format!("-I{}/ndk/{}/toolchains/llvm/prebuilt/{}/sysroot/usr/include", android_home, ndk_version, host_tag),
-            &format!("-I{}/ndk/{}/toolchains/llvm/prebuilt/{}/sysroot/usr/include/aarch64-linux-android", android_home, ndk_version, host_tag)
-        ]);
+                // Add the include path for headers.
+                .clang_args([
+                    "-std=c++20",
+                    "-xc++",
+                    &format!("-I{}/build/include", src.display()),
+                    // Dependencies' include paths needs to be added manually.
+                    &format!("-I{}/build/_deps/msgpack-c/src/msgpack-c/include", src.display()),
+                    //&format!("-I{}/build/_deps/libdeflate-src", dst.display()),
+                    &format!("-I{}/ndk/{}/toolchains/llvm/prebuilt/{}/sysroot/usr/include/c++/v1", android_home, ndk_version, host_tag),
+                    &format!("-I{}/ndk/{}/toolchains/llvm/prebuilt/{}/sysroot/usr/include", android_home, ndk_version, host_tag),
+                    &format!("-I{}/ndk/{}/toolchains/llvm/prebuilt/{}/sysroot/usr/include/aarch64-linux-android", android_home, ndk_version, host_tag)
+                ]);
     } else if target_os == "ios" {
         builder = builder
-        // Add the include path for headers.
-        .clang_args([
-            "-std=c++20",
-            "-xc++",
-            &format!("-I{}/build/include", dst.display()),
-            // Dependencies' include paths needs to be added manually.
-            &format!("-I{}/build/_deps/msgpack-c/src/msgpack-c/include", dst.display()),
-            //&format!("-I{}/build/_deps/libdeflate-src", dst.display()),
-            "-I/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk/usr/include/c++/v1",
-            "-I/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk/usr/include",
-            "-target", "arm64-apple-ios15.0",
-            "--sysroot=/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk"
-        ]);
+                // Add the include path for headers.
+                .clang_args([
+                    "-std=c++20",
+                    "-xc++",
+                    &format!("-I{}/build/include", src.display()),
+                    // Dependencies' include paths needs to be added manually.
+                    &format!("-I{}/build/_deps/msgpack-c/src/msgpack-c/include", src.display()),
+                    //&format!("-I{}/build/_deps/libdeflate-src", dst.display()),
+                    "-I/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk/usr/include/c++/v1",
+                    "-I/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk/usr/include",
+                    "-target", "arm64-apple-ios15.0",
+                    "--sysroot=/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk"
+                ]);
     } else if target_os == "macos" {
         builder = builder
-            // Add the include path for headers.
-            .clang_args([
-                "-std=c++20",
-                "-xc++",
-                &format!("-I{}/build/include", dst.display()),
-                // Dependencies' include paths needs to be added manually.
-                &format!("-I{}/build/_deps/msgpack-c/src/msgpack-c/include", dst.display()),
-                // Add barretenberg include path for relative includes
-                &format!("-I{}/build/include/barretenberg", dst.display()),
-                //&format!("-I{}/build/_deps/libdeflate-src", dst.display()),
-                "-I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1",
-                "-I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include",
-                // Fix for macOS system type issues
-                "-D_LIBCPP_DISABLE_AVAILABILITY",
-                "-target", "arm64-apple-macosx15.0",
-                "--sysroot=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
-            ]);
+                // Add the include path for headers.
+                .clang_args([
+                    "-std=c++20",
+                    "-xc++",
+                    &format!("-I{}/build/include", src.display()),
+                    // Dependencies' include paths needs to be added manually.
+                    &format!("-I{}/build/_deps/msgpack-c/src/msgpack-c/include", src.display()),
+                    // Add barretenberg include path for relative includes
+                    &format!("-I{}/build/include/barretenberg", src.display()),
+                    //&format!("-I{}/build/_deps/libdeflate-src", dst.display()),
+                    "-I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include/c++/v1",
+                    "-I/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk/usr/include",
+                    // Fix for macOS system type issues
+                    "-D_LIBCPP_DISABLE_AVAILABILITY",
+                    "-target", "arm64-apple-macosx15.0",
+                    "--sysroot=/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX.sdk",
+                ]);
     } else {
         builder = builder
             // Add the include path for headers.
             .clang_args([
                 "-std=c++20",
                 "-xc++",
-                &format!("-I{}/build/include", dst.display()),
+                &format!("-I{}/build/include", src.display()),
                 // Dependencies' include paths needs to be added manually.
-                &dep_include("msgpack-c/src/msgpack-c/include", &dst),
-                &dep_include("tracy-src/public", &dst),
-                //&format!("-I{}/build/_deps/libdeflate-src", dst.display()),
-                &format!("-I{}/build/_deps/libdeflate-src", dst.display()),
-                &format!("-I{}/build/include/barretenberg", dst.display()),
+                &dep_include("msgpack-c/src/msgpack-c/include", &src),
+                &dep_include("tracy-src/public", &src),
+                &format!("-I{}/build/_deps/libdeflate-src", src.display()),
+                &format!("-I{}/build/include/barretenberg", src.display()),
             ]);
     }
-
     let bindings = builder
         // The input header we would like to generate bindings for.
         .header_contents("wrapper.hpp", include_str!("./wrapper.hpp"))
@@ -217,7 +260,82 @@ fn main() {
     bindings
         .write_to_file(&bindings_file)
         .expect("Couldn't write bindings!");
+    bindings_file
+}
 
-    // Fix duplicate type definitions in the generated bindings
-    fix_duplicate_bindings(&bindings_file);
+fn main() {
+    // Notify Cargo to rerun this build script if `build.rs` changes
+    println!("cargo:rerun-if-changed=build.rs");
+    // cfg!(target_os = "<os>") does not work so we get the value
+    // of the target_os environment variable to determine the target OS.
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap();
+    let hardcoded_bindings = PathBuf::from("bindings").join("bindings.rs");
+
+    // Features exported by cargo are available as env vars: CARGO_FEATURE_<NAME>
+    let buildlib = env::var("CARGO_FEATURE_BUILDLIB").is_ok();
+    let prebuild = env::var("CARGO_FEATURE_PREBUILD").is_ok() || !buildlib;
+    if prebuild {
+        println!("cargo:warning=Feature `prebuild` enabled -> using precompiled libs and hand-crafted bindings");
+    } else {
+        println!("cargo:warning=Feature `buildlib` enabled -> will build libraries and generate bindings");
+    }
+
+    let libs = PathBuf::from("./libs");
+    let src = PathBuf::from("../cpp");
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+
+    // Note that it's possible that both pre-build and buildlib are true, in which case build first.
+    if buildlib {
+        let mut options = ScanOptions::new(&[
+            "**/src/barretenberg/**/*.hpp",
+            "**/src/barretenberg/**/*.cpp",
+        ]);
+        options.verbose = true;
+        let must_build = needs_rebuild(&src, &src.join("build/lib/libbarretenberg.a"), options)
+            .expect("Failed to check if rebuild is needed");
+        if must_build {
+            build_lib(&target_os);
+        } else {
+            println!("cargo:warning=No changes detected in C++ source files, skipping rebuild");
+        }
+        link_libraries(&libs);
+        // Copy the headers to the build directory.
+        // Fix an issue where the headers are not included in the build.
+        Command::new("sh")
+            .args(&[
+                "copy-headers.sh",
+                &format!("{}/build/include", src.display()),
+            ])
+            .output()
+            .unwrap();
+        let bindings_file = generate_bindings(target_os, &src);
+        // Fix duplicate type definitions in the generated bindings
+        fix_duplicate_bindings(&bindings_file);
+        match fs::copy(&bindings_file, &hardcoded_bindings) {
+            Ok(n) => println!(
+                "cargo:warning=Generated bindings copied to {} ({n} bytes)",
+                hardcoded_bindings.display()
+            ),
+            Err(e) => println!("cargo:warning=Failed to copy generated bindings: {}", e),
+        }
+    }
+
+    if prebuild {
+        let hardcoded_bindings = PathBuf::from("bindings").join("bindings.rs");
+        let libbarretenberg_path = libs.join("libbarretenberg.a");
+        if !libbarretenberg_path.exists() {
+            println!(
+                "cargo:warning=libbarretenberg.a not found at expected path: {}",
+                libbarretenberg_path.display()
+            );
+            println!("cargo:warning=Ensure that barretenberg C++ library is built before running this build script.");
+            panic!("Build static libraries with ../../bootstrap.sh build_barretenberg");
+        }
+        link_libraries(&libs);
+        // Copy the hand-crafted bindings file to OUT_DIR
+        let out_bindings = out_dir.join("bindings.rs");
+        copy_handcrafted_bindings_to_out(&hardcoded_bindings, &out_dir);
+        // Tell Cargo to re-run if the hand-crafted bindings change
+        println!("cargo:rerun-if-changed={}", hardcoded_bindings.display());
+    }
 }

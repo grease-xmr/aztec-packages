@@ -4,7 +4,7 @@ mod inputs;
 
 // exports
 pub use api::{compile, execute, CompilationResult, ExecutionResult, NoirError};
-pub use inputs::{FieldInput, InputError, Inputs, PointInput};
+pub use inputs::{FieldInput, InputError, Inputs, PointInput, ToInputValue, VecInput};
 
 // re-export
 pub use acir::{circuit::Program, bincode_deserialize, bincode_serialize};

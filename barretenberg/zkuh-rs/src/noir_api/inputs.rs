@@ -38,7 +38,7 @@ impl From<Infallible> for InputError {
 
 //------------------------ Inputs - Wrapper around InputMap -----------------------
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Inputs {
     inputs: InputMap,
 }

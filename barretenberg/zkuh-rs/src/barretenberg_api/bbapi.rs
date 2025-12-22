@@ -9,7 +9,6 @@ use std::os::raw::c_void;
 use std::path::Path;
 use std::ptr;
 use std::ptr::null;
-// This is not used for now, but may replace the acir functions later
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BbErrorResponse {

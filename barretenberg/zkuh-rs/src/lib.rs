@@ -1,7 +1,10 @@
 mod barretenberg_api;
 pub mod noir_api;
 
-pub use barretenberg_api::bbapi::{CircuitComputeVk, CircuitProve, CircuitVerify};
+pub use barretenberg_api::bbapi::{
+    BbApiError, BbErrorResponse, CircuitComputeVk, CircuitComputeVkResponse, CircuitProve,
+    CircuitProveResponse, CircuitVerify, CircuitVerifyResponse, ProofSystemSettings,
+};
 
 pub mod circuits {
     pub use crate::barretenberg_api::acir::{

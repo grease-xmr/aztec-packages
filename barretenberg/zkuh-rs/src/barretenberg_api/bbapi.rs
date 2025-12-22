@@ -10,19 +10,19 @@ use std::path::Path;
 use std::ptr;
 use std::ptr::null;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BbErrorResponse {
     pub message: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CircuitInputNoVK {
     pub name: String,
     #[serde(with = "serde_bytes")]
     pub bytecode: Vec<u8>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CircuitInput {
     pub name: String,
     #[serde(with = "serde_bytes")]
@@ -31,7 +31,7 @@ pub struct CircuitInput {
     pub verification_key: Vec<u8>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProofSystemSettings {
     #[serde(default)]
     pub ipa_accumulation: bool,
@@ -68,7 +68,7 @@ impl Default for ProofSystemSettings {
 }
 
 // Command structs
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CircuitProve {
     pub circuit: CircuitInput,
     #[serde(with = "serde_bytes")]
@@ -76,7 +76,7 @@ pub struct CircuitProve {
     pub settings: ProofSystemSettings,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CircuitProveResponse {
     pub public_inputs: Vec<Uint256>,
     pub proof: Vec<Uint256>,
@@ -98,7 +98,7 @@ impl CircuitProveResponse {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CircuitVerify {
     #[serde(with = "serde_bytes")]
     pub verification_key: Vec<u8>,
@@ -107,18 +107,18 @@ pub struct CircuitVerify {
     pub settings: ProofSystemSettings,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CircuitVerifyResponse {
     pub verified: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CircuitComputeVk {
     pub circuit: CircuitInputNoVK,
     pub settings: ProofSystemSettings,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CircuitComputeVkResponse {
     #[serde(with = "serde_bytes")]
     pub bytes: Vec<u8>,

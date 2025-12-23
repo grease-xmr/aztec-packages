@@ -1,5 +1,6 @@
 use super::bindgen;
 use crate::barretenberg_api::bindgen::bbapi_cleanup;
+use crate::barretenberg_api::uint256::Uint256;
 use crate::noir_api::artifacts::{load_binary, save_binary};
 use log::*;
 use num_bigint::BigUint;
@@ -41,15 +42,6 @@ pub struct ProofSystemSettings {
     pub disable_zk: bool,
     #[serde(default)]
     pub optimized_solidity_verifier: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Uint256(#[serde(with = "serde_bytes")] [u8; 32]);
-
-impl Uint256 {
-    pub fn as_bigint(&self) -> BigUint {
-        BigUint::from_bytes_be(&self.0)
-    }
 }
 
 fn default_oracle_hash_type() -> String {

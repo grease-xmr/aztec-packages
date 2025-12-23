@@ -14,6 +14,7 @@ buildlib = []
 
 [dependencies]
 acir = { version = "1.0.0-beta.15", path = "../../noir/noir-repo/acvm-repo/acir" }
+blake2 = "0.10.6"
 bn254_blackbox_solver = { version = "1.0.0-beta.15", path = "../../noir/noir-repo/acvm-repo/bn254_blackbox_solver" }
 noirc_artifacts = { version = "1.0.0-beta.15", path = "../../noir/noir-repo/tooling/noirc_artifacts" }
 nargo = { version = "1.0.0-beta.15", path = "../../noir/noir-repo/tooling/nargo" }

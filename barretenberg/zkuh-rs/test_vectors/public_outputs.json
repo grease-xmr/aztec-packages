@@ -1,0 +1,70 @@
+{
+  "noir_version": "1.0.0-beta.15+83245db91dcf63420ef4bcbbd85b98f397fee663",
+  "hash": "14288626751749283533",
+  "abi": {
+    "parameters": [
+      {
+        "name": "inputs",
+        "type": {
+          "kind": "array",
+          "length": 4,
+          "type": {
+            "kind": "integer",
+            "sign": "unsigned",
+            "width": 64
+          }
+        },
+        "visibility": "public"
+      },
+      {
+        "name": "index",
+        "type": {
+          "kind": "integer",
+          "sign": "unsigned",
+          "width": 32
+        },
+        "visibility": "private"
+      },
+      {
+        "name": "offset",
+        "type": {
+          "kind": "integer",
+          "sign": "unsigned",
+          "width": 64
+        },
+        "visibility": "public"
+      },
+      {
+        "name": "factor",
+        "type": {
+          "kind": "integer",
+          "sign": "unsigned",
+          "width": 64
+        },
+        "visibility": "private"
+      }
+    ],
+    "return_type": {
+      "abi_type": {
+        "kind": "integer",
+        "sign": "unsigned",
+        "width": 64
+      },
+      "visibility": "public"
+    },
+    "error_types": {}
+  },
+  "bytecode": "H4sIAAAAAAAA/7VVvU7DMBA+O0l/0rQg1C4MKCNsIFYkKiEkJsTIgipEIxQJCkShEmPfAMQL8BQIFt6lGyMLc6mLjxyu09qpelJ0yfk+f5/v7JjBr7nSX5/HvcbYN+U3Gz+O9MLaSoxpYlwTc2TMUfiAYBwNp6eZqyRjHPQWgp0xOxxzYfkcFfPcv1ryBflKBXAe2NeCWjh7GOX8W1tVeh8zcGOIgQ8lJpLaymwhGBkTBalAtjFDQxwtynb3OBnuvGy9nRy+DganZ5u7n0cP77ePB8Pv569xbnV+7pPMnawlBHvjiv55PDaaajCtKQ9D+yJwolcuZD+SqUIuoNtEC1qwCGGgKfA88gDMN1PdQk/RNdQh/3Dk4etgtxltD58vdXFD3N6Gf7UyGo1s6tUA8zXQzStw+8q4qU6crgzLOfioQxws8QPzKClkN60HWU/KGvy69N04iS7SuB914l4aXUZJ5+7+Jo2jXlqRGeh9wuKYK+aIrxXDT1apmk/eayqh9K4Gx3K+ueJn5c76lQWaMZxzTXqqF9exKj3tRj9KUrwLsYYtwmdRQ4b4ZjG8tgct8o7zIg+tYwh2htexpxlTe+sovOiZPT/L06HrN/aySWJYjx86X/XGdAsAAA==",
+  "debug_symbols": "pZLLroMgEED/ZdYsEKxWf+XmxqCODQlBQ6FJY/z3jlL6WDRp7IYDDIcZwszQYxtOjbbDeIb6b4bWaWP0qTFjp7weLe3OC4O0bLxDpC14iZM1KYfWQ22DMQwuyoTt0HlSdqNXjqKcAdqeSBcO2uA6W9jT5p9VkZV3WUjx0A/f+3mV/OJHv8z2+FV6vORyhy95kXzxY/5dvhTH5Ofv/j+tVKfdW8dASSkZHKGmb6u2MeMRWYSIkBF5xCGiiCgj1kuWtTKnVWvw3pBDsN1Lf/rrlCKpgyc3dtgHh2tlW4xqvQE=",
+  "file_map": {
+    "50": {
+      "source": "\n/// A toy example that multiplies an input by a factor, but we don't know which one until the factor is revealed.\nfn main(inputs: pub [u64; 4], index: u32, offset: pub u64, factor: u64) -> pub u64 {\n    let factor = factor as Field;\n    let used = inputs[index] as Field;\n    let result = used * factor + offset as Field;\n\n    result as u64\n}\n\n#[test]\nfn test_main() {\n    let output = main([1,2,3,4], 2, 5, 10);\n    assert_eq(output, 35);\n}\n",
+      "path": "test_vectors/public_outputs/src/main.nr"
+    }
+  },
+  "expression_width": {
+    "Bounded": {
+      "width": 4
+    }
+  }
+}

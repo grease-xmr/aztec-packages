@@ -59,7 +59,7 @@
   "file_map": {
     "50": {
       "source": "\n/// A toy example that multiplies an input by a factor, but we don't know which one until the factor is revealed.\nfn main(inputs: pub [u64; 4], index: u32, offset: pub u64, factor: u64) -> pub u64 {\n    let factor = factor as Field;\n    let used = inputs[index] as Field;\n    let result = used * factor + offset as Field;\n\n    result as u64\n}\n\n#[test]\nfn test_main() {\n    let output = main([1,2,3,4], 2, 5, 10);\n    assert_eq(output, 35);\n}\n",
-      "path": "/home/code/oss/aztec-packages/barretenberg/zkuh-rs/test_vectors/public_outputs/src/main.nr"
+      "path": "test_vectors/public_outputs/src/main.nr"
     }
   },
   "expression_width": {

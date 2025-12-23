@@ -48,7 +48,7 @@ impl ExecutionError {
 /// Errors that can occur during proof verification.
 #[derive(Debug, Error)]
 pub enum ProofVerificationError {
-    #[error("No program artifact has been loaded yet. Nothing to execute.")]
+    #[error("No program artifact has been loaded yet. Nothing to verify.")]
     NoProgram,
     #[error("Error serializing {src}: {reason}")]
     SerializeError { src: String, reason: String },
@@ -153,7 +153,7 @@ impl<'p, V: ByteCodeVerification> ProofRunner<'p, V> {
     pub fn prove(&mut self) -> Result<RunnerResult, ExecutionError> {
         let program = self
             .program
-            .ok_or_else(|| noir_api::NoirError::Execution("No program artifact set".to_string()))?;
+            .ok_or(ExecutionError::NoProgram)?;
         if self.inputs.is_none() {
             return Err(ExecutionError::NoInputs);
         }
@@ -465,7 +465,7 @@ mod tests {
             verifier
                 .verify_proof(proof.proof(), proof.public_inputs())
                 .is_ok(),
-            "Naiive verification failed"
+            "Naive verification failed"
         );
 
         // Proper checking catches the evil proof.

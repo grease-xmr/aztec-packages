@@ -1,5 +1,7 @@
+use crate::{bytes_to_uint256, Uint256};
 use acir::{AcirField, FieldElement};
-use noirc_abi::{input_parser::InputValue, InputMap};
+use noirc_abi::errors::AbiError;
+use noirc_abi::{input_parser::InputValue, Abi, AbiType, AbiVisibility, InputMap};
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 use thiserror::Error;
@@ -36,11 +38,16 @@ impl From<Infallible> for InputError {
     }
 }
 
+#[derive(Clone, Debug, Error)]
+#[error("Public input {0} was not specified.")]
+pub struct PublicInputError(pub String);
+
 //------------------------ Inputs - Wrapper around InputMap -----------------------
 
 #[derive(Debug, Default, Clone)]
 pub struct Inputs {
     inputs: InputMap,
+    return_value: Option<InputValue>,
 }
 
 impl Inputs {
@@ -99,9 +106,110 @@ impl Inputs {
         }
     }
 
+    pub fn return_value<T: Into<FieldInput>>(mut self, value: T) -> Self {
+        let input = value.into();
+        self.return_value = Some(input.into());
+        self
+    }
+
     pub fn as_input_map(&self) -> &InputMap {
         &self.inputs
     }
+
+    /// Extracts public inputs as a vector of Uint256 in the order defined by the ABI.
+    ///
+    /// If a public return value is specified in the ABI, it must be provided in the Inputs via [`Self::return_value`].
+    ///
+    /// # Errors
+    ///
+    /// Returns `PublicInputError` if
+    /// * any required public input is missing.
+    /// * a public return value is required but not provided.
+    /// * a return value is provided when none is expected.
+    pub fn public_inputs(&self, abi: &Abi) -> Result<Vec<Uint256>, PublicInputError> {
+        let map = self.as_input_map();
+        let mut public_inputs = abi
+            .parameters
+            .iter()
+            .filter(|param| param.is_public())
+            .map(|p| {
+                let name = &p.name;
+                let input = map
+                    .get(name)
+                    .ok_or_else(|| PublicInputError(name.clone()))?;
+                let encoded = Self::encode_value(input.clone(), &p.typ)
+                    .map_err(|e| PublicInputError(e.to_string()))?;
+                Ok::<Vec<Uint256>, PublicInputError>(encoded)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        match (&abi.return_type, &self.return_value) {
+            (Some(t), Some(val)) if t.visibility == AbiVisibility::Public => {
+                let encoded = Self::encode_value(val.clone(), &t.abi_type).map_err(|e| {
+                    PublicInputError(format!("Could not convert return value: {e}"))
+                })?;
+                public_inputs.push(encoded);
+            }
+            (Some(t), None) if t.visibility == AbiVisibility::Public => {
+                return Err(PublicInputError(
+                    "You must specify a return value".to_string(),
+                ));
+            }
+            (None, Some(_)) => {
+                return Err(PublicInputError(
+                    "You must not specify a return value".to_string(),
+                ))
+            }
+            _ => {}
+        }
+        let public_inputs = public_inputs.into_iter().flatten().collect();
+        Ok(public_inputs)
+    }
+
+    fn encode_value(value: InputValue, abi_type: &AbiType) -> Result<Vec<Uint256>, InputError> {
+        let mut encoded_value: Vec<Uint256> = Vec::new();
+        match (value, abi_type) {
+            (InputValue::Field(elem), _) => {
+                let val =
+                    fe_to_uint256(&elem).map_err(|e| InputError::InvalidFieldRepresentation {
+                        reason: e.to_string(),
+                    })?;
+                encoded_value.push(val);
+            }
+
+            (InputValue::Vec(vec_elements), AbiType::Array { typ, .. }) => {
+                for elem in vec_elements {
+                    encoded_value.extend(Self::encode_value(elem, typ)?);
+                }
+            }
+
+            (InputValue::String(string), _) => {
+                let str_as_fields = string.bytes().map(|byte| Uint256::from(byte));
+                encoded_value.extend(str_as_fields);
+            }
+
+            (InputValue::Struct(object), AbiType::Struct { fields, .. }) => {
+                for (field, typ) in fields {
+                    encoded_value.extend(Self::encode_value(object[field].clone(), typ)?);
+                }
+            }
+            (InputValue::Vec(vec_elements), AbiType::Tuple { fields }) => {
+                for (value, typ) in vec_elements.into_iter().zip(fields) {
+                    encoded_value.extend(Self::encode_value(value, typ)?);
+                }
+            }
+            _ => unreachable!("value should have already been checked to match abi type"),
+        }
+        Ok(encoded_value)
+    }
+}
+
+fn fe_to_uint256(fe: &FieldElement) -> Result<Uint256, &'static str> {
+    let repr = fe.to_be_bytes();
+    let arr = bytes_to_uint256(&repr)?;
+    if arr.len() != 1 {
+        return Err("FieldElement did not convert to single Uint256");
+    }
+    Ok(arr[0])
 }
 
 //------------------------ ToInputValue - Helper trait -----------------------

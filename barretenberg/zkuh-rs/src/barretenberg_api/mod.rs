@@ -2,6 +2,7 @@
 pub mod acir;
 pub mod bbapi;
 pub mod models;
+pub mod uint256;
 
 #[cfg(test)]
 pub mod tests;

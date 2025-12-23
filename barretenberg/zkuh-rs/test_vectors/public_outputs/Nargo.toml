@@ -1,0 +1,6 @@
+[package]
+name = "public_outputs"
+type = "bin"
+authors = [""]
+
+[dependencies]

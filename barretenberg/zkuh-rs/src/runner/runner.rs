@@ -5,7 +5,6 @@ use crate::{
 };
 use blake2::Blake2b512;
 use noirc_abi::input_parser::InputValue;
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// Errors that can occur during bytecode verification.
@@ -132,6 +131,11 @@ impl<'p, V: ByteCodeVerification> ProofRunner<'p, V> {
         verify_bytecode(program, &self.checksum, &self.verifier)
     }
 
+    /// Returns the expected bytecode checksum.
+    pub fn checksum(&self) -> &str {
+        &self.checksum
+    }
+
     /// Computes the bytecode checksum for the loaded program.
     pub fn bytecode_checksum(&self) -> Result<String, BytecodeError> {
         let program = self.program.ok_or_else(|| BytecodeError::NoProgram)?;
@@ -238,6 +242,11 @@ impl<'p, V: ByteCodeVerification> VerificationRunner<'p, V> {
     pub fn verify_bytecode(&self) -> Result<(), BytecodeError> {
         let program = self.program.ok_or_else(|| BytecodeError::NoProgram)?;
         verify_bytecode(program, &self.checksum, &self.verifier)
+    }
+
+    /// Returns the expected bytecode checksum.
+    pub fn checksum(&self) -> &str {
+        &self.checksum
     }
 
     pub fn bytecode_checksum(&self) -> Result<String, BytecodeError> {

@@ -218,6 +218,78 @@ impl Inputs {
         })
     }
 
+    /// Serializes the `Inputs` to a JSON string.
+    ///
+    /// The output format is round-trip compatible with [`Self::parse_json`]:
+    /// ```json
+    /// {
+    ///   "inputs": { ... },
+    ///   "return_value": ...  // only present if return_value is Some
+    /// }
+    /// ```
+    ///
+    /// If an `abi` is provided, the ABI types are used for serialization, which enables
+    /// proper handling of signed integers and booleans. If `abi` is `None`, types are
+    /// inferred from the `InputValue` structure.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InputError` if:
+    /// - A parameter in the inputs is not found in the ABI (when ABI is provided)
+    /// - Any value cannot be converted to JSON
+    pub fn as_json(&self, abi: Option<&Abi>) -> Result<String, InputError> {
+        let abi_types = abi.map(|a| a.to_btree_map());
+
+        // Convert inputs to JsonTypes
+        let mut json_inputs = BTreeMap::new();
+        for (key, value) in &self.inputs {
+            let abi_type = match &abi_types {
+                Some(types) => types
+                    .get(key)
+                    .ok_or_else(|| InputError::ParameterNotInAbi(key.clone()))?,
+                None => &infer_abi_type_from_input(value),
+            };
+            let json_value = JsonTypes::try_from_input_value(value, abi_type)
+                .map_err(|e| InputError::JsonParseError(e.to_string()))?;
+            json_inputs.insert(key.clone(), json_value);
+        }
+
+        // Convert return_value if present
+        let json_return_value = match &self.return_value {
+            Some(value) => {
+                let inferred_type = infer_abi_type_from_input(value);
+                let abi_type = match abi {
+                    Some(a) => a
+                        .return_type
+                        .as_ref()
+                        .map(|rt| &rt.abi_type)
+                        .unwrap_or(&inferred_type),
+                    None => &inferred_type,
+                };
+                Some(
+                    JsonTypes::try_from_input_value(value, abi_type)
+                        .map_err(|e| InputError::JsonParseError(e.to_string()))?,
+                )
+            }
+            None => None,
+        };
+
+        // Build the output structure
+        #[derive(serde::Serialize)]
+        struct RawInputs {
+            inputs: BTreeMap<String, JsonTypes>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            return_value: Option<JsonTypes>,
+        }
+
+        let raw = RawInputs {
+            inputs: json_inputs,
+            return_value: json_return_value,
+        };
+
+        serde_json::to_string(&raw).map_err(|e| InputError::JsonParseError(e.to_string()))
+    }
+
     /// Extracts public inputs as a vector of Uint256 in the order defined by the ABI.
     ///
     /// If a public return value is specified in the ABI, it must be provided in the Inputs via [`Self::return_value`].
@@ -332,6 +404,36 @@ fn infer_abi_type(value: &JsonTypes) -> AbiType {
             let fields: Vec<(String, AbiType)> = table
                 .iter()
                 .map(|(k, v)| (k.clone(), infer_abi_type(v)))
+                .collect();
+            AbiType::Struct {
+                path: String::new(),
+                fields,
+            }
+        }
+    }
+}
+
+/// Infers an `AbiType` from the structure of an `InputValue`.
+///
+/// This is the inverse of `infer_abi_type` and is used for serialization when no ABI is provided.
+fn infer_abi_type_from_input(value: &InputValue) -> AbiType {
+    match value {
+        InputValue::Field(_) => AbiType::Field,
+        InputValue::String(s) => AbiType::String { length: s.len() as u32 },
+        InputValue::Vec(vec) => {
+            let elem_type = vec
+                .first()
+                .map(infer_abi_type_from_input)
+                .unwrap_or(AbiType::Field);
+            AbiType::Array {
+                length: vec.len() as u32,
+                typ: Box::new(elem_type),
+            }
+        }
+        InputValue::Struct(map) => {
+            let fields: Vec<(String, AbiType)> = map
+                .iter()
+                .map(|(k, v)| (k.clone(), infer_abi_type_from_input(v)))
                 .collect();
             AbiType::Struct {
                 path: String::new(),
@@ -821,5 +923,103 @@ mod test {
 
         // Verify return value
         expect_return_value(&inputs, 42);
+    }
+
+    #[test]
+    fn as_json_basic() {
+        let inputs = Inputs::new()
+            .add_field("x", 1u64)
+            .add_field("y", 42u64);
+
+        let json = inputs.as_json(None).expect("Failed to serialize to JSON");
+
+        // BTreeMap ensures consistent ordering (alphabetical)
+        assert_eq!(json, r#"{"inputs":{"x":"0x01","y":"0x2a"}}"#);
+    }
+
+    #[test]
+    fn as_json_with_return_value() {
+        let inputs = Inputs::new()
+            .add_field("x", 1u64)
+            .return_value(123u64);
+
+        let json = inputs.as_json(None).expect("Failed to serialize to JSON");
+
+        assert_eq!(json, r#"{"inputs":{"x":"0x01"},"return_value":"0x7b"}"#);
+    }
+
+    #[test]
+    fn as_json_without_return_value_omits_field() {
+        let inputs = Inputs::new().add_field("x", 1u64);
+
+        let json = inputs.as_json(None).expect("Failed to serialize to JSON");
+
+        assert_eq!(json, r#"{"inputs":{"x":"0x01"}}"#);
+    }
+
+    #[test]
+    fn as_json_roundtrip_basic() {
+        let original = Inputs::new()
+            .add_field("x", 1u64)
+            .add_field("y", 42u64);
+
+        let json = original.as_json(None).expect("Failed to serialize");
+        let parsed = Inputs::parse_json(&json, None).expect("Failed to parse");
+
+        let parsed_map = parsed.as_input_map();
+        assert_eq!(parsed_map.len(), 2);
+        expect_value(parsed_map, "x", 1);
+        expect_value(parsed_map, "y", 42);
+    }
+
+    #[test]
+    fn as_json_roundtrip_with_return_value() {
+        let original = Inputs::new()
+            .add_field("x", 1u64)
+            .return_value(123u64);
+
+        let json = original.as_json(None).expect("Failed to serialize");
+        let parsed = Inputs::parse_json(&json, None).expect("Failed to parse");
+
+        expect_value(parsed.as_input_map(), "x", 1);
+        expect_return_value(&parsed, 123);
+    }
+
+    #[test]
+    fn as_json_with_abi() {
+        use crate::noir_api::artifacts::load_artifact;
+
+        let artifact = load_artifact("test_vectors/hello_world.json").expect("Load artifact");
+
+        let inputs = Inputs::new()
+            .add_field("x", 1u64)
+            .add_field("y", 2u64);
+
+        let json = inputs
+            .as_json(Some(&artifact.abi))
+            .expect("Failed to serialize");
+
+        assert_eq!(json, r#"{"inputs":{"x":"0x01","y":"0x02"}}"#);
+    }
+
+    #[test]
+    fn as_json_roundtrip_with_abi() {
+        use crate::noir_api::artifacts::load_artifact;
+
+        let artifact = load_artifact("test_vectors/hello_world.json").expect("Load artifact");
+
+        let original = Inputs::new()
+            .add_field("x", 1u64)
+            .add_field("y", 2u64);
+
+        let json = original
+            .as_json(Some(&artifact.abi))
+            .expect("Failed to serialize");
+        let parsed =
+            Inputs::parse_json(&json, Some(&artifact.abi)).expect("Failed to parse");
+
+        let parsed_map = parsed.as_input_map();
+        expect_value(parsed_map, "x", 1);
+        expect_value(parsed_map, "y", 2);
     }
 }

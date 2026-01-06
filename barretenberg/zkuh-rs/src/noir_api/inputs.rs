@@ -1,6 +1,8 @@
 use crate::{bytes_to_uint256, Uint256};
 use acir::{AcirField, FieldElement};
-use noirc_abi::{input_parser::json::JsonTypes, input_parser::InputValue, Abi, AbiType, AbiVisibility, InputMap};
+use noirc_abi::{
+    input_parser::json::JsonTypes, input_parser::InputValue, Abi, AbiType, AbiVisibility, InputMap,
+};
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 use thiserror::Error;
@@ -12,6 +14,8 @@ pub enum InputError {
     InvalidFieldRepresentation { reason: String },
     #[error("JSON parsing error: {0}")]
     JsonParseError(String),
+    #[error("CBOR serialization error: {0}")]
+    CborSerializeError(String),
     #[error("Expected JSON object for 'inputs' field")]
     ExpectedInputsObject,
     #[error("Parameter '{0}' not found in ABI")]
@@ -30,6 +34,9 @@ impl InputError {
             InputError::JsonParseError(msg) => {
                 InputError::JsonParseError(format!("{msg} and {}", other.reason()))
             }
+            InputError::CborSerializeError(msg) => {
+                InputError::CborSerializeError(format!("{msg} and {}", other.reason()))
+            }
             InputError::ExpectedInputsObject => InputError::ExpectedInputsObject,
             InputError::ParameterNotInAbi(name) => InputError::ParameterNotInAbi(name.clone()),
         }
@@ -39,6 +46,7 @@ impl InputError {
         match self {
             InputError::InvalidFieldRepresentation { reason } => reason.as_str(),
             InputError::JsonParseError(msg) => msg.as_str(),
+            InputError::CborSerializeError(msg) => msg.as_str(),
             InputError::ExpectedInputsObject => "Expected JSON object for 'inputs' field",
             InputError::ParameterNotInAbi(name) => name.as_str(),
         }
@@ -56,6 +64,13 @@ impl From<Infallible> for InputError {
 pub struct PublicInputError(pub String);
 
 //------------------------ Inputs - Wrapper around InputMap -----------------------
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct RawInputs {
+    inputs: JsonTypes,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    return_value: Option<JsonTypes>,
+}
 
 #[derive(Debug, Default, Clone)]
 pub struct Inputs {
@@ -129,46 +144,52 @@ impl Inputs {
         &self.inputs
     }
 
-    /// Parses a JSON string into `Inputs`.
-    ///
-    /// The JSON format must be an object with the following structure:
-    /// ```json
-    /// {
-    ///   "inputs": { ... },
-    ///   "return_value": ...  // optional, can be null or omitted
-    /// }
-    /// ```
-    ///
-    /// The `inputs` field must be an object where keys are parameter names and values
-    /// can be:
-    /// - Strings (interpreted as field elements - hex with "0x" prefix or decimal)
-    /// - Integers (converted to field elements)
-    /// - Booleans (converted to field elements: true=1, false=0)
-    /// - Arrays (converted to Vec of InputValues)
-    /// - Objects (converted to Struct InputValues)
-    ///
-    /// If an `abi` is provided, the ABI types are used for parsing, which enables
-    /// proper handling of signed integers and type validation. If `abi` is `None`,
-    /// types are inferred from the JSON structure.
-    ///
-    /// # Errors
-    ///
-    /// Returns `InputError` if:
-    /// - The JSON is malformed
-    /// - The root is not an object
-    /// - The `inputs` field is missing or not an object
-    /// - Any value cannot be converted to an InputValue
-    /// - A parameter in the JSON is not found in the ABI (when ABI is provided)
-    pub fn parse_json(json_str: &str, abi: Option<&Abi>) -> Result<Self, InputError> {
-        #[derive(serde::Deserialize)]
-        struct RawInputs {
-            inputs: JsonTypes,
-            return_value: Option<JsonTypes>,
+    /// Common helper to convert Inputs to RawInputs
+    fn to_raw_inputs(&self, abi: Option<&Abi>) -> Result<RawInputs, InputError> {
+        let abi_types = abi.map(|a| a.to_btree_map());
+
+        // Convert inputs to JsonTypes
+        let mut json_inputs = BTreeMap::new();
+        for (key, value) in &self.inputs {
+            let abi_type = match &abi_types {
+                Some(types) => types
+                    .get(key)
+                    .ok_or_else(|| InputError::ParameterNotInAbi(key.clone()))?,
+                None => &infer_abi_type_from_input(value),
+            };
+            let json_value = JsonTypes::try_from_input_value(value, abi_type)
+                .map_err(|e| InputError::JsonParseError(e.to_string()))?;
+            json_inputs.insert(key.clone(), json_value);
         }
 
-        let raw: RawInputs =
-            serde_json::from_str(json_str).map_err(|e| InputError::JsonParseError(e.to_string()))?;
+        // Convert return_value if present
+        let json_return_value = match &self.return_value {
+            Some(value) => {
+                let inferred_type = infer_abi_type_from_input(value);
+                let abi_type = match abi {
+                    Some(a) => a
+                        .return_type
+                        .as_ref()
+                        .map(|rt| &rt.abi_type)
+                        .unwrap_or(&inferred_type),
+                    None => &inferred_type,
+                };
+                Some(
+                    JsonTypes::try_from_input_value(value, abi_type)
+                        .map_err(|e| InputError::JsonParseError(e.to_string()))?,
+                )
+            }
+            None => None,
+        };
 
+        Ok(RawInputs {
+            inputs: JsonTypes::Table(json_inputs),
+            return_value: json_return_value,
+        })
+    }
+
+    /// Common helper to convert RawInputs to Inputs
+    fn from_raw_inputs(raw: RawInputs, abi: Option<&Abi>) -> Result<Self, InputError> {
         // Build ABI type map if ABI is provided
         let abi_types = abi.map(|a| a.to_btree_map());
 
@@ -218,6 +239,74 @@ impl Inputs {
         })
     }
 
+    /// Parses CBOR binary data into `Inputs`.
+    ///
+    /// The CBOR format must be a map with the following structure (equivalent to the JSON format):
+    /// - "inputs": map of parameter names to values
+    /// - "return_value": optional value
+    ///
+    /// The `inputs` field must be a map where keys are parameter names and values
+    /// can be:
+    /// - Strings (interpreted as field elements - hex with "0x" prefix or decimal)
+    /// - Integers (converted to field elements)
+    /// - Booleans (converted to field elements: true=1, false=0)
+    /// - Arrays (converted to Vec of InputValues)
+    /// - Objects (converted to Struct InputValues)
+    ///
+    /// If an `abi` is provided, the ABI types are used for parsing, which enables
+    /// proper handling of signed integers and type validation. If `abi` is `None`,
+    /// types are inferred from the structure.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InputError` if:
+    /// - The CBOR data is malformed
+    /// - The root is not a map
+    /// - The `inputs` field is missing or not a map
+    /// - Any value cannot be converted to an InputValue
+    /// - A parameter is not found in the ABI (when ABI is provided)
+    pub fn parse_cbor(cbor_data: &[u8], abi: Option<&Abi>) -> Result<Self, InputError> {
+        let raw: RawInputs = ciborium::from_reader(cbor_data)
+            .map_err(|e| InputError::CborSerializeError(e.to_string()))?;
+        Self::from_raw_inputs(raw, abi)
+    }
+
+    /// Parses a JSON string into `Inputs`.
+    ///
+    /// The JSON format must be an object with the following structure:
+    /// ```json
+    /// {
+    ///   "inputs": { ... },
+    ///   "return_value": ...  // optional, can be null or omitted
+    /// }
+    /// ```
+    ///
+    /// The `inputs` field must be an object where keys are parameter names and values
+    /// can be:
+    /// - Strings (interpreted as field elements - hex with "0x" prefix or decimal)
+    /// - Integers (converted to field elements)
+    /// - Booleans (converted to field elements: true=1, false=0)
+    /// - Arrays (converted to Vec of InputValues)
+    /// - Objects (converted to Struct InputValues)
+    ///
+    /// If an `abi` is provided, the ABI types are used for parsing, which enables
+    /// proper handling of signed integers and type validation. If `abi` is `None`,
+    /// types are inferred from the JSON structure.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InputError` if:
+    /// - The JSON is malformed
+    /// - The root is not an object
+    /// - The `inputs` field is missing or not an object
+    /// - Any value cannot be converted to an InputValue
+    /// - A parameter in the JSON is not found in the ABI (when ABI is provided)
+    pub fn parse_json(json_str: &str, abi: Option<&Abi>) -> Result<Self, InputError> {
+        let raw: RawInputs = serde_json::from_str(json_str)
+            .map_err(|e| InputError::JsonParseError(e.to_string()))?;
+        Self::from_raw_inputs(raw, abi)
+    }
+
     /// Serializes the `Inputs` to a JSON string.
     ///
     /// The output format is round-trip compatible with [`Self::parse_json`]:
@@ -238,56 +327,30 @@ impl Inputs {
     /// - A parameter in the inputs is not found in the ABI (when ABI is provided)
     /// - Any value cannot be converted to JSON
     pub fn as_json(&self, abi: Option<&Abi>) -> Result<String, InputError> {
-        let abi_types = abi.map(|a| a.to_btree_map());
-
-        // Convert inputs to JsonTypes
-        let mut json_inputs = BTreeMap::new();
-        for (key, value) in &self.inputs {
-            let abi_type = match &abi_types {
-                Some(types) => types
-                    .get(key)
-                    .ok_or_else(|| InputError::ParameterNotInAbi(key.clone()))?,
-                None => &infer_abi_type_from_input(value),
-            };
-            let json_value = JsonTypes::try_from_input_value(value, abi_type)
-                .map_err(|e| InputError::JsonParseError(e.to_string()))?;
-            json_inputs.insert(key.clone(), json_value);
-        }
-
-        // Convert return_value if present
-        let json_return_value = match &self.return_value {
-            Some(value) => {
-                let inferred_type = infer_abi_type_from_input(value);
-                let abi_type = match abi {
-                    Some(a) => a
-                        .return_type
-                        .as_ref()
-                        .map(|rt| &rt.abi_type)
-                        .unwrap_or(&inferred_type),
-                    None => &inferred_type,
-                };
-                Some(
-                    JsonTypes::try_from_input_value(value, abi_type)
-                        .map_err(|e| InputError::JsonParseError(e.to_string()))?,
-                )
-            }
-            None => None,
-        };
-
-        // Build the output structure
-        #[derive(serde::Serialize)]
-        struct RawInputs {
-            inputs: BTreeMap<String, JsonTypes>,
-            #[serde(skip_serializing_if = "Option::is_none")]
-            return_value: Option<JsonTypes>,
-        }
-
-        let raw = RawInputs {
-            inputs: json_inputs,
-            return_value: json_return_value,
-        };
-
+        let raw = self.to_raw_inputs(abi)?;
         serde_json::to_string(&raw).map_err(|e| InputError::JsonParseError(e.to_string()))
+    }
+
+    /// Serializes the `Inputs` to CBOR (Concise Binary Object Representation) binary format.
+    ///
+    /// The output structure is equivalent to [`Self::as_json`], containing an "inputs" map
+    /// and an optional "return_value" field, but encoded in CBOR binary format instead of JSON text.
+    ///
+    /// If an `abi` is provided, the ABI types are used for serialization, which enables
+    /// proper handling of signed integers and booleans. If `abi` is `None`, types are
+    /// inferred from the `InputValue` structure.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InputError` if:
+    /// - A parameter in the inputs is not found in the ABI (when ABI is provided)
+    /// - Any value cannot be converted to CBOR
+    pub fn as_cbor(&self, abi: Option<&Abi>) -> Result<Vec<u8>, InputError> {
+        let raw = self.to_raw_inputs(abi)?;
+        let mut buffer = Vec::new();
+        ciborium::into_writer(&raw, &mut buffer)
+            .map_err(|e| InputError::CborSerializeError(e.to_string()))?;
+        Ok(buffer)
     }
 
     /// Extracts public inputs as a vector of Uint256 in the order defined by the ABI.
@@ -419,7 +482,9 @@ fn infer_abi_type(value: &JsonTypes) -> AbiType {
 fn infer_abi_type_from_input(value: &InputValue) -> AbiType {
     match value {
         InputValue::Field(_) => AbiType::Field,
-        InputValue::String(s) => AbiType::String { length: s.len() as u32 },
+        InputValue::String(s) => AbiType::String {
+            length: s.len() as u32,
+        },
         InputValue::Vec(vec) => {
             let elem_type = vec
                 .first()
@@ -895,8 +960,7 @@ mod test {
         // public_outputs has:
         //   inputs: [u64; 4] (public), index: u32 (private), offset: u64 (public), factor: u64 (private)
         //   return_type: u64 (public)
-        let artifact =
-            load_artifact("test_vectors/public_outputs.json").expect("Load artifact");
+        let artifact = load_artifact("test_vectors/public_outputs.json").expect("Load artifact");
 
         let json = r#"{
             "inputs": {
@@ -908,8 +972,7 @@ mod test {
             "return_value": 42
         }"#;
 
-        let inputs =
-            Inputs::parse_json(json, Some(&artifact.abi)).expect("Failed to parse JSON");
+        let inputs = Inputs::parse_json(json, Some(&artifact.abi)).expect("Failed to parse JSON");
         let map = inputs.as_input_map();
         assert_eq!(map.len(), 4);
 
@@ -927,9 +990,7 @@ mod test {
 
     #[test]
     fn as_json_basic() {
-        let inputs = Inputs::new()
-            .add_field("x", 1u64)
-            .add_field("y", 42u64);
+        let inputs = Inputs::new().add_field("x", 1u64).add_field("y", 42u64);
 
         let json = inputs.as_json(None).expect("Failed to serialize to JSON");
 
@@ -939,9 +1000,7 @@ mod test {
 
     #[test]
     fn as_json_with_return_value() {
-        let inputs = Inputs::new()
-            .add_field("x", 1u64)
-            .return_value(123u64);
+        let inputs = Inputs::new().add_field("x", 1u64).return_value(123u64);
 
         let json = inputs.as_json(None).expect("Failed to serialize to JSON");
 
@@ -959,9 +1018,7 @@ mod test {
 
     #[test]
     fn as_json_roundtrip_basic() {
-        let original = Inputs::new()
-            .add_field("x", 1u64)
-            .add_field("y", 42u64);
+        let original = Inputs::new().add_field("x", 1u64).add_field("y", 42u64);
 
         let json = original.as_json(None).expect("Failed to serialize");
         let parsed = Inputs::parse_json(&json, None).expect("Failed to parse");
@@ -974,9 +1031,7 @@ mod test {
 
     #[test]
     fn as_json_roundtrip_with_return_value() {
-        let original = Inputs::new()
-            .add_field("x", 1u64)
-            .return_value(123u64);
+        let original = Inputs::new().add_field("x", 1u64).return_value(123u64);
 
         let json = original.as_json(None).expect("Failed to serialize");
         let parsed = Inputs::parse_json(&json, None).expect("Failed to parse");
@@ -991,9 +1046,7 @@ mod test {
 
         let artifact = load_artifact("test_vectors/hello_world.json").expect("Load artifact");
 
-        let inputs = Inputs::new()
-            .add_field("x", 1u64)
-            .add_field("y", 2u64);
+        let inputs = Inputs::new().add_field("x", 1u64).add_field("y", 2u64);
 
         let json = inputs
             .as_json(Some(&artifact.abi))
@@ -1008,15 +1061,146 @@ mod test {
 
         let artifact = load_artifact("test_vectors/hello_world.json").expect("Load artifact");
 
-        let original = Inputs::new()
-            .add_field("x", 1u64)
-            .add_field("y", 2u64);
+        let original = Inputs::new().add_field("x", 1u64).add_field("y", 2u64);
 
         let json = original
             .as_json(Some(&artifact.abi))
             .expect("Failed to serialize");
-        let parsed =
-            Inputs::parse_json(&json, Some(&artifact.abi)).expect("Failed to parse");
+        let parsed = Inputs::parse_json(&json, Some(&artifact.abi)).expect("Failed to parse");
+
+        let parsed_map = parsed.as_input_map();
+        expect_value(parsed_map, "x", 1);
+        expect_value(parsed_map, "y", 2);
+    }
+
+    #[test]
+    fn as_cbor_basic() {
+        let inputs = Inputs::new().add_field("x", 1u64).add_field("y", 42u64);
+
+        let cbor = inputs.as_cbor(None).expect("Failed to serialize to CBOR");
+        let hex_output = hex::encode(&cbor);
+
+        // Verify CBOR output matches expected hex
+        let expected = "a166696e70757473a26178643078303161796430783261";
+        assert_eq!(hex_output, expected);
+
+        // Verify we can decode it back
+        let decoded = hex::decode(expected).expect("Failed to decode hex");
+        assert_eq!(cbor, decoded);
+    }
+
+    #[test]
+    fn as_cbor_with_return_value() {
+        let inputs = Inputs::new().add_field("x", 1u64).return_value(123u64);
+
+        let cbor = inputs.as_cbor(None).expect("Failed to serialize to CBOR");
+        let hex_output = hex::encode(&cbor);
+
+        // Verify CBOR output matches expected hex
+        let expected = "a266696e70757473a1617864307830316c72657475726e5f76616c75656430783762";
+        assert_eq!(hex_output, expected);
+
+        // Verify we can decode it back
+        let decoded = hex::decode(expected).expect("Failed to decode hex");
+        assert_eq!(cbor, decoded);
+    }
+
+    #[test]
+    fn as_cbor_with_abi() {
+        use crate::noir_api::artifacts::load_artifact;
+
+        let artifact = load_artifact("test_vectors/hello_world.json").expect("Load artifact");
+
+        let inputs = Inputs::new().add_field("x", 1u64).add_field("y", 2u64);
+
+        let cbor = inputs
+            .as_cbor(Some(&artifact.abi))
+            .expect("Failed to serialize");
+        let hex_output = hex::encode(&cbor);
+
+        // Verify CBOR output matches expected hex
+        let expected = "a166696e70757473a26178643078303161796430783032";
+        assert_eq!(hex_output, expected);
+
+        // Verify we can decode it back
+        let decoded = hex::decode(expected).expect("Failed to decode hex");
+        assert_eq!(cbor, decoded);
+    }
+
+    #[test]
+    fn parse_cbor_basic() {
+        let hex_cbor = "a166696e70757473a26178643078303161796430783261";
+        let cbor = hex::decode(hex_cbor).expect("Failed to decode hex");
+
+        let inputs = Inputs::parse_cbor(&cbor, None).expect("Failed to parse CBOR");
+        let map = inputs.as_input_map();
+        assert_eq!(map.len(), 2);
+        expect_value(map, "x", 1);
+        expect_value(map, "y", 42);
+    }
+
+    #[test]
+    fn parse_cbor_with_return_value() {
+        let hex_cbor = "a266696e70757473a1617864307830316c72657475726e5f76616c75656430783762";
+        let cbor = hex::decode(hex_cbor).expect("Failed to decode hex");
+
+        let inputs = Inputs::parse_cbor(&cbor, None).expect("Failed to parse CBOR");
+        assert_eq!(inputs.as_input_map().len(), 1);
+        expect_return_value(&inputs, 123);
+    }
+
+    #[test]
+    fn parse_cbor_with_abi() {
+        use crate::noir_api::artifacts::load_artifact;
+
+        let artifact = load_artifact("test_vectors/hello_world.json").expect("Load artifact");
+
+        let hex_cbor = "a166696e70757473a26178643078303161796430783032";
+        let cbor = hex::decode(hex_cbor).expect("Failed to decode hex");
+
+        let inputs = Inputs::parse_cbor(&cbor, Some(&artifact.abi)).expect("Failed to parse CBOR");
+        let map = inputs.as_input_map();
+        assert_eq!(map.len(), 2);
+        expect_value(map, "x", 1);
+        expect_value(map, "y", 2);
+    }
+
+    #[test]
+    fn cbor_roundtrip_basic() {
+        let original = Inputs::new().add_field("x", 1u64).add_field("y", 42u64);
+
+        let cbor = original.as_cbor(None).expect("Failed to serialize");
+        let parsed = Inputs::parse_cbor(&cbor, None).expect("Failed to parse");
+
+        let parsed_map = parsed.as_input_map();
+        assert_eq!(parsed_map.len(), 2);
+        expect_value(parsed_map, "x", 1);
+        expect_value(parsed_map, "y", 42);
+    }
+
+    #[test]
+    fn cbor_roundtrip_with_return_value() {
+        let original = Inputs::new().add_field("x", 1u64).return_value(123u64);
+
+        let cbor = original.as_cbor(None).expect("Failed to serialize");
+        let parsed = Inputs::parse_cbor(&cbor, None).expect("Failed to parse");
+
+        expect_value(parsed.as_input_map(), "x", 1);
+        expect_return_value(&parsed, 123);
+    }
+
+    #[test]
+    fn cbor_roundtrip_with_abi() {
+        use crate::noir_api::artifacts::load_artifact;
+
+        let artifact = load_artifact("test_vectors/hello_world.json").expect("Load artifact");
+
+        let original = Inputs::new().add_field("x", 1u64).add_field("y", 2u64);
+
+        let cbor = original
+            .as_cbor(Some(&artifact.abi))
+            .expect("Failed to serialize");
+        let parsed = Inputs::parse_cbor(&cbor, Some(&artifact.abi)).expect("Failed to parse");
 
         let parsed_map = parsed.as_input_map();
         expect_value(parsed_map, "x", 1);
@@ -1104,8 +1288,6 @@ mod test {
             .add_field("unknown_param", 2u64);
 
         let err = inputs.as_json(Some(&artifact.abi)).unwrap_err();
-        assert!(
-            matches!(err, InputError::ParameterNotInAbi(name) if name == "unknown_param")
-        );
+        assert!(matches!(err, InputError::ParameterNotInAbi(name) if name == "unknown_param"));
     }
 }

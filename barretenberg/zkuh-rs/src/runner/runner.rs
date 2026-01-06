@@ -151,9 +151,7 @@ impl<'p, V: ByteCodeVerification> ProofRunner<'p, V> {
     ///
     /// Returns a `CircuitProveResponse` containing the proof and public inputs upon success.
     pub fn prove(&mut self) -> Result<RunnerResult, ExecutionError> {
-        let program = self
-            .program
-            .ok_or(ExecutionError::NoProgram)?;
+        let program = self.program.ok_or(ExecutionError::NoProgram)?;
         if self.inputs.is_none() {
             return Err(ExecutionError::NoInputs);
         }

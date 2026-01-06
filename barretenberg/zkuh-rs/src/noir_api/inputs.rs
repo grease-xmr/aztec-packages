@@ -1,7 +1,6 @@
 use crate::{bytes_to_uint256, Uint256};
 use acir::{AcirField, FieldElement};
-use noirc_abi::errors::AbiError;
-use noirc_abi::{input_parser::InputValue, Abi, AbiType, AbiVisibility, InputMap};
+use noirc_abi::{input_parser::json::JsonTypes, input_parser::InputValue, Abi, AbiType, AbiVisibility, InputMap};
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 use thiserror::Error;
@@ -11,6 +10,12 @@ use thiserror::Error;
 pub enum InputError {
     #[error("Invalid Field Element representation: {reason}")]
     InvalidFieldRepresentation { reason: String },
+    #[error("JSON parsing error: {0}")]
+    JsonParseError(String),
+    #[error("Expected JSON object for 'inputs' field")]
+    ExpectedInputsObject,
+    #[error("Parameter '{0}' not found in ABI")]
+    ParameterNotInAbi(String),
 }
 
 impl InputError {
@@ -22,12 +27,20 @@ impl InputError {
                     reason: format!("{reason} and {}", other.reason()),
                 }
             }
+            InputError::JsonParseError(msg) => {
+                InputError::JsonParseError(format!("{msg} and {}", other.reason()))
+            }
+            InputError::ExpectedInputsObject => InputError::ExpectedInputsObject,
+            InputError::ParameterNotInAbi(name) => InputError::ParameterNotInAbi(name.clone()),
         }
     }
 
     pub fn reason(&self) -> &str {
         match self {
             InputError::InvalidFieldRepresentation { reason } => reason.as_str(),
+            InputError::JsonParseError(msg) => msg.as_str(),
+            InputError::ExpectedInputsObject => "Expected JSON object for 'inputs' field",
+            InputError::ParameterNotInAbi(name) => name.as_str(),
         }
     }
 }
@@ -114,6 +127,95 @@ impl Inputs {
 
     pub fn as_input_map(&self) -> &InputMap {
         &self.inputs
+    }
+
+    /// Parses a JSON string into `Inputs`.
+    ///
+    /// The JSON format must be an object with the following structure:
+    /// ```json
+    /// {
+    ///   "inputs": { ... },
+    ///   "return_value": ...  // optional, can be null or omitted
+    /// }
+    /// ```
+    ///
+    /// The `inputs` field must be an object where keys are parameter names and values
+    /// can be:
+    /// - Strings (interpreted as field elements - hex with "0x" prefix or decimal)
+    /// - Integers (converted to field elements)
+    /// - Booleans (converted to field elements: true=1, false=0)
+    /// - Arrays (converted to Vec of InputValues)
+    /// - Objects (converted to Struct InputValues)
+    ///
+    /// If an `abi` is provided, the ABI types are used for parsing, which enables
+    /// proper handling of signed integers and type validation. If `abi` is `None`,
+    /// types are inferred from the JSON structure.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InputError` if:
+    /// - The JSON is malformed
+    /// - The root is not an object
+    /// - The `inputs` field is missing or not an object
+    /// - Any value cannot be converted to an InputValue
+    /// - A parameter in the JSON is not found in the ABI (when ABI is provided)
+    pub fn parse_json(json_str: &str, abi: Option<&Abi>) -> Result<Self, InputError> {
+        #[derive(serde::Deserialize)]
+        struct RawInputs {
+            inputs: JsonTypes,
+            return_value: Option<JsonTypes>,
+        }
+
+        let raw: RawInputs =
+            serde_json::from_str(json_str).map_err(|e| InputError::JsonParseError(e.to_string()))?;
+
+        // Build ABI type map if ABI is provided
+        let abi_types = abi.map(|a| a.to_btree_map());
+
+        // Parse the inputs field - must be an object/table
+        let inputs = match raw.inputs {
+            JsonTypes::Table(table) => {
+                let mut input_map = InputMap::new();
+                for (key, value) in table {
+                    let abi_type = match &abi_types {
+                        Some(types) => types
+                            .get(&key)
+                            .ok_or_else(|| InputError::ParameterNotInAbi(key.clone()))?,
+                        None => &infer_abi_type(&value),
+                    };
+                    let input_value = InputValue::try_from_json(value, abi_type, &key)
+                        .map_err(|e| InputError::JsonParseError(e.to_string()))?;
+                    input_map.insert(key, input_value);
+                }
+                input_map
+            }
+            _ => return Err(InputError::ExpectedInputsObject),
+        };
+
+        // Parse optional return_value
+        let return_value = match raw.return_value {
+            Some(json_val) => {
+                let inferred_type = infer_abi_type(&json_val);
+                let abi_type = match abi {
+                    Some(a) => a
+                        .return_type
+                        .as_ref()
+                        .map(|rt| &rt.abi_type)
+                        .unwrap_or(&inferred_type),
+                    None => &inferred_type,
+                };
+                Some(
+                    InputValue::try_from_json(json_val, abi_type, "return_value")
+                        .map_err(|e| InputError::JsonParseError(e.to_string()))?,
+                )
+            }
+            None => None,
+        };
+
+        Ok(Self {
+            inputs,
+            return_value,
+        })
     }
 
     /// Extracts public inputs as a vector of Uint256 in the order defined by the ABI.
@@ -210,6 +312,33 @@ fn fe_to_uint256(fe: &FieldElement) -> Result<Uint256, &'static str> {
         return Err("FieldElement did not convert to single Uint256");
     }
     Ok(arr[0])
+}
+
+/// Infers an `AbiType` from the structure of a `JsonTypes` value.
+///
+/// String types are treated as field elements. In the future, this could be extended to differentiate strings.
+fn infer_abi_type(value: &JsonTypes) -> AbiType {
+    match value {
+        JsonTypes::String(_) | JsonTypes::Integer(_) => AbiType::Field,
+        JsonTypes::Bool(_) => AbiType::Boolean,
+        JsonTypes::Array(arr) => {
+            let elem_type = arr.first().map(infer_abi_type).unwrap_or(AbiType::Field);
+            AbiType::Array {
+                length: arr.len() as u32,
+                typ: Box::new(elem_type),
+            }
+        }
+        JsonTypes::Table(table) => {
+            let fields: Vec<(String, AbiType)> = table
+                .iter()
+                .map(|(k, v)| (k.clone(), infer_abi_type(v)))
+                .collect();
+            AbiType::Struct {
+                path: String::new(),
+                fields,
+            }
+        }
+    }
 }
 
 //------------------------ ToInputValue - Helper trait -----------------------
@@ -502,5 +631,195 @@ mod test {
             .expect("Failed to create input map");
         let input_map = inputs.as_input_map();
         assert_eq!(input_map.len(), 3);
+    }
+
+    fn expect_value(map: &InputMap, var_name: &str, expected: u128) {
+        match map.get(var_name) {
+            Some(InputValue::Field(fe)) => {
+                let val = fe.to_u128();
+                assert_eq!(val, expected, "Value for '{}' does not match", var_name);
+            }
+            _ => panic!("Expected field input for '{}'", var_name),
+        }
+    }
+
+    fn expect_return_value(inputs: &Inputs, expected: u128) {
+        match &inputs.return_value {
+            Some(InputValue::Field(fe)) => {
+                let val = fe.to_u128();
+                assert_eq!(val, expected, "Return value does not match");
+            }
+            _ => panic!("Expected field input for return_value"),
+        }
+    }
+
+    #[test]
+    fn parse_json_basic() {
+        let json = r#"{
+            "inputs": {
+                "x": "0x01",
+                "y": 42,
+                "flag": true
+            }
+        }"#;
+
+        let inputs = Inputs::parse_json(json, None).expect("Failed to parse JSON");
+        let map = inputs.as_input_map();
+        assert_eq!(map.len(), 3);
+        expect_value(map, "x", 1);
+        expect_value(map, "y", 42);
+        expect_value(map, "flag", 1); // true = 1
+    }
+
+    #[test]
+    fn parse_json_with_return_value() {
+        let json = r#"{
+            "inputs": {
+                "x": "0x01"
+            },
+            "return_value": 123
+        }"#;
+
+        let inputs = Inputs::parse_json(json, None).expect("Failed to parse JSON");
+        assert_eq!(inputs.as_input_map().len(), 1);
+        expect_return_value(&inputs, 123);
+    }
+
+    #[test]
+    fn parse_json_with_null_return_value() {
+        let json = r#"{
+            "inputs": {
+                "x": "0x01"
+            },
+            "return_value": null
+        }"#;
+
+        let inputs = Inputs::parse_json(json, None).expect("Failed to parse JSON");
+        assert_eq!(inputs.as_input_map().len(), 1);
+        assert!(inputs.return_value.is_none());
+    }
+
+    #[test]
+    fn parse_json_with_array() {
+        let json = r#"{
+            "inputs": {
+                "arr": ["0x01", "0x02", "0x03"]
+            }
+        }"#;
+
+        let inputs = Inputs::parse_json(json, None).expect("Failed to parse JSON");
+        let map = inputs.as_input_map();
+        assert!(matches!(map.get("arr"), Some(InputValue::Vec(v)) if v.len() == 3));
+    }
+
+    #[test]
+    fn parse_json_with_struct() {
+        let json = r#"{
+            "inputs": {
+                "point": {
+                    "x": "0x01",
+                    "y": "0x02"
+                }
+            }
+        }"#;
+
+        let inputs = Inputs::parse_json(json, None).expect("Failed to parse JSON");
+        let map = inputs.as_input_map();
+        assert!(matches!(map.get("point"), Some(InputValue::Struct(_))));
+    }
+
+    #[test]
+    fn parse_json_invalid_inputs_not_object() {
+        let json = r#"{
+            "inputs": [1, 2, 3]
+        }"#;
+
+        let err = Inputs::parse_json(json, None).unwrap_err();
+        assert!(matches!(err, InputError::ExpectedInputsObject));
+    }
+
+    #[test]
+    fn parse_json_missing_inputs() {
+        let json = r#"{
+            "return_value": 42
+        }"#;
+
+        let err = Inputs::parse_json(json, None).unwrap_err();
+        assert!(matches!(err, InputError::JsonParseError(_)));
+    }
+
+    #[test]
+    fn parse_json_with_abi() {
+        use crate::noir_api::artifacts::load_artifact;
+
+        // hello_world has parameters: x (Field, private), y (Field, public)
+        let artifact = load_artifact("test_vectors/hello_world.json").expect("Load artifact");
+
+        let json = r#"{
+            "inputs": {
+                "x": 1,
+                "y": 2
+            }
+        }"#;
+
+        let inputs = Inputs::parse_json(json, Some(&artifact.abi)).expect("Failed to parse JSON");
+        let map = inputs.as_input_map();
+        assert_eq!(map.len(), 2);
+        expect_value(map, "x", 1);
+        expect_value(map, "y", 2);
+    }
+
+    #[test]
+    fn parse_json_with_abi_unknown_param() {
+        use crate::noir_api::artifacts::load_artifact;
+
+        let artifact = load_artifact("test_vectors/hello_world.json").expect("Load artifact");
+
+        let json = r#"{
+            "inputs": {
+                "x": 1,
+                "unknown": 2
+            }
+        }"#;
+
+        let err = Inputs::parse_json(json, Some(&artifact.abi)).unwrap_err();
+        assert!(matches!(err, InputError::ParameterNotInAbi(name) if name == "unknown"));
+    }
+
+    #[test]
+    fn parse_json_with_abi_return_value() {
+        use crate::noir_api::artifacts::load_artifact;
+
+        // public_outputs has:
+        //   inputs: [u64; 4] (public), index: u32 (private), offset: u64 (public), factor: u64 (private)
+        //   return_type: u64 (public)
+        let artifact =
+            load_artifact("test_vectors/public_outputs.json").expect("Load artifact");
+
+        let json = r#"{
+            "inputs": {
+                "inputs": [1, 2, 3, 4],
+                "index": 0,
+                "offset": 100,
+                "factor": 2
+            },
+            "return_value": 42
+        }"#;
+
+        let inputs =
+            Inputs::parse_json(json, Some(&artifact.abi)).expect("Failed to parse JSON");
+        let map = inputs.as_input_map();
+        assert_eq!(map.len(), 4);
+
+        // Verify array was parsed correctly
+        assert!(matches!(map.get("inputs"), Some(InputValue::Vec(v)) if v.len() == 4));
+
+        // Verify scalar inputs
+        expect_value(map, "index", 0);
+        expect_value(map, "offset", 100);
+        expect_value(map, "factor", 2);
+
+        // Verify return value
+        expect_return_value(&inputs, 42);
     }
 }

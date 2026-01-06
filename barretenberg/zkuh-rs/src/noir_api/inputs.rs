@@ -1022,4 +1022,90 @@ mod test {
         expect_value(parsed_map, "x", 1);
         expect_value(parsed_map, "y", 2);
     }
+
+    // -------------------- Error condition tests --------------------
+
+    #[test]
+    fn parse_json_error_malformed_json() {
+        let json = r#"{ not valid json }"#;
+
+        let err = Inputs::parse_json(json, None).unwrap_err();
+        assert!(matches!(err, InputError::JsonParseError(_)));
+    }
+
+    #[test]
+    fn parse_json_error_invalid_field_value() {
+        // "not_a_number" is not a valid hex or decimal field value
+        let json = r#"{
+            "inputs": {
+                "x": "not_a_number"
+            }
+        }"#;
+
+        let err = Inputs::parse_json(json, None).unwrap_err();
+        assert!(matches!(err, InputError::JsonParseError(_)));
+    }
+
+    #[test]
+    fn parse_json_error_inputs_is_string() {
+        let json = r#"{
+            "inputs": "not an object"
+        }"#;
+
+        let err = Inputs::parse_json(json, None).unwrap_err();
+        assert!(matches!(err, InputError::ExpectedInputsObject));
+    }
+
+    #[test]
+    fn parse_json_error_inputs_is_number() {
+        let json = r#"{
+            "inputs": 42
+        }"#;
+
+        let err = Inputs::parse_json(json, None).unwrap_err();
+        assert!(matches!(err, InputError::ExpectedInputsObject));
+    }
+
+    #[test]
+    fn parse_json_error_empty_json() {
+        let json = r#"{}"#;
+
+        let err = Inputs::parse_json(json, None).unwrap_err();
+        assert!(matches!(err, InputError::JsonParseError(_)));
+    }
+
+    #[test]
+    fn parse_json_error_abi_type_mismatch() {
+        use crate::noir_api::artifacts::load_artifact;
+
+        // hello_world expects x and y as Field types, but we provide an array
+        let artifact = load_artifact("test_vectors/hello_world.json").expect("Load artifact");
+
+        let json = r#"{
+            "inputs": {
+                "x": [1, 2, 3],
+                "y": 2
+            }
+        }"#;
+
+        let err = Inputs::parse_json(json, Some(&artifact.abi)).unwrap_err();
+        assert!(matches!(err, InputError::JsonParseError(_)));
+    }
+
+    #[test]
+    fn as_json_error_param_not_in_abi() {
+        use crate::noir_api::artifacts::load_artifact;
+
+        // hello_world only has x and y parameters
+        let artifact = load_artifact("test_vectors/hello_world.json").expect("Load artifact");
+
+        let inputs = Inputs::new()
+            .add_field("x", 1u64)
+            .add_field("unknown_param", 2u64);
+
+        let err = inputs.as_json(Some(&artifact.abi)).unwrap_err();
+        assert!(
+            matches!(err, InputError::ParameterNotInAbi(name) if name == "unknown_param")
+        );
+    }
 }

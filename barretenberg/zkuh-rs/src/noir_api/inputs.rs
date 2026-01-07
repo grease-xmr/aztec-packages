@@ -265,6 +265,7 @@ impl Inputs {
     /// - The `inputs` field is missing or not a map
     /// - Any value cannot be converted to an InputValue
     /// - A parameter is not found in the ABI (when ABI is provided)
+    #[cfg(feature = "cbor")]
     pub fn parse_cbor(cbor_data: &[u8], abi: Option<&Abi>) -> Result<Self, InputError> {
         let raw: RawInputs = ciborium::from_reader(cbor_data)
             .map_err(|e| InputError::CborSerializeError(e.to_string()))?;
@@ -301,6 +302,7 @@ impl Inputs {
     /// - The `inputs` field is missing or not an object
     /// - Any value cannot be converted to an InputValue
     /// - A parameter in the JSON is not found in the ABI (when ABI is provided)
+    #[cfg(feature = "json")]
     pub fn parse_json(json_str: &str, abi: Option<&Abi>) -> Result<Self, InputError> {
         let raw: RawInputs = serde_json::from_str(json_str)
             .map_err(|e| InputError::JsonParseError(e.to_string()))?;
@@ -326,6 +328,7 @@ impl Inputs {
     /// Returns `InputError` if:
     /// - A parameter in the inputs is not found in the ABI (when ABI is provided)
     /// - Any value cannot be converted to JSON
+    #[cfg(feature = "json")]
     pub fn as_json(&self, abi: Option<&Abi>) -> Result<String, InputError> {
         let raw = self.to_raw_inputs(abi)?;
         serde_json::to_string(&raw).map_err(|e| InputError::JsonParseError(e.to_string()))
@@ -345,6 +348,7 @@ impl Inputs {
     /// Returns `InputError` if:
     /// - A parameter in the inputs is not found in the ABI (when ABI is provided)
     /// - Any value cannot be converted to CBOR
+    #[cfg(feature = "cbor")]
     pub fn as_cbor(&self, abi: Option<&Abi>) -> Result<Vec<u8>, InputError> {
         let raw = self.to_raw_inputs(abi)?;
         let mut buffer = Vec::new();
@@ -800,7 +804,7 @@ mod test {
         assert_eq!(input_map.len(), 3);
     }
 
-    fn expect_value(map: &InputMap, var_name: &str, expected: u128) {
+    pub fn expect_value(map: &InputMap, var_name: &str, expected: u128) {
         match map.get(var_name) {
             Some(InputValue::Field(fe)) => {
                 let val = fe.to_u128();
@@ -810,7 +814,7 @@ mod test {
         }
     }
 
-    fn expect_return_value(inputs: &Inputs, expected: u128) {
+    pub fn expect_return_value(inputs: &Inputs, expected: u128) {
         match &inputs.return_value {
             Some(InputValue::Field(fe)) => {
                 let val = fe.to_u128();
@@ -819,7 +823,11 @@ mod test {
             _ => panic!("Expected field input for return_value"),
         }
     }
+}
 
+#[cfg(all(feature = "json", test))]
+mod json {
+    use noirc_abi::input_parser::InputValue;
     #[test]
     fn parse_json_basic() {
         let json = r#"{
@@ -1073,6 +1081,99 @@ mod test {
         expect_value(parsed_map, "y", 2);
     }
 
+    // -------------------- Error condition tests --------------------
+
+    use crate::noir_api::inputs::test::{expect_return_value, expect_value};
+    use crate::noir_api::{InputError, Inputs};
+
+    #[test]
+    fn parse_json_error_malformed_json() {
+        let json = r#"{ not valid json }"#;
+
+        let err = Inputs::parse_json(json, None).unwrap_err();
+        assert!(matches!(err, InputError::JsonParseError(_)));
+    }
+
+    #[test]
+    fn parse_json_error_invalid_field_value() {
+        // "not_a_number" is not a valid hex or decimal field value
+        let json = r#"{
+            "inputs": {
+                "x": "not_a_number"
+            }
+        }"#;
+
+        let err = Inputs::parse_json(json, None).unwrap_err();
+        assert!(matches!(err, InputError::JsonParseError(_)));
+    }
+
+    #[test]
+    fn parse_json_error_inputs_is_string() {
+        let json = r#"{
+            "inputs": "not an object"
+        }"#;
+
+        let err = Inputs::parse_json(json, None).unwrap_err();
+        assert!(matches!(err, InputError::ExpectedInputsObject));
+    }
+
+    #[test]
+    fn parse_json_error_inputs_is_number() {
+        let json = r#"{
+            "inputs": 42
+        }"#;
+
+        let err = Inputs::parse_json(json, None).unwrap_err();
+        assert!(matches!(err, InputError::ExpectedInputsObject));
+    }
+
+    #[test]
+    fn parse_json_error_empty_json() {
+        let json = r#"{}"#;
+
+        let err = Inputs::parse_json(json, None).unwrap_err();
+        assert!(matches!(err, InputError::JsonParseError(_)));
+    }
+
+    #[test]
+    fn parse_json_error_abi_type_mismatch() {
+        use crate::noir_api::artifacts::load_artifact;
+
+        // hello_world expects x and y as Field types, but we provide an array
+        let artifact = load_artifact("test_vectors/hello_world.json").expect("Load artifact");
+
+        let json = r#"{
+            "inputs": {
+                "x": [1, 2, 3],
+                "y": 2
+            }
+        }"#;
+
+        let err = Inputs::parse_json(json, Some(&artifact.abi)).unwrap_err();
+        assert!(matches!(err, InputError::JsonParseError(_)));
+    }
+
+    #[test]
+    fn as_json_error_param_not_in_abi() {
+        use crate::noir_api::artifacts::load_artifact;
+
+        // hello_world only has x and y parameters
+        let artifact = load_artifact("test_vectors/hello_world.json").expect("Load artifact");
+
+        let inputs = Inputs::new()
+            .add_field("x", 1u64)
+            .add_field("unknown_param", 2u64);
+
+        let err = inputs.as_json(Some(&artifact.abi)).unwrap_err();
+        assert!(matches!(err, InputError::ParameterNotInAbi(name) if name == "unknown_param"));
+    }
+}
+
+#[cfg(all(feature = "cbor", test))]
+mod cbor {
+    use crate::noir_api::inputs::test::{expect_return_value, expect_value};
+    use crate::noir_api::Inputs;
+
     #[test]
     fn as_cbor_basic() {
         let inputs = Inputs::new().add_field("x", 1u64).add_field("y", 42u64);
@@ -1205,89 +1306,5 @@ mod test {
         let parsed_map = parsed.as_input_map();
         expect_value(parsed_map, "x", 1);
         expect_value(parsed_map, "y", 2);
-    }
-
-    // -------------------- Error condition tests --------------------
-
-    #[test]
-    fn parse_json_error_malformed_json() {
-        let json = r#"{ not valid json }"#;
-
-        let err = Inputs::parse_json(json, None).unwrap_err();
-        assert!(matches!(err, InputError::JsonParseError(_)));
-    }
-
-    #[test]
-    fn parse_json_error_invalid_field_value() {
-        // "not_a_number" is not a valid hex or decimal field value
-        let json = r#"{
-            "inputs": {
-                "x": "not_a_number"
-            }
-        }"#;
-
-        let err = Inputs::parse_json(json, None).unwrap_err();
-        assert!(matches!(err, InputError::JsonParseError(_)));
-    }
-
-    #[test]
-    fn parse_json_error_inputs_is_string() {
-        let json = r#"{
-            "inputs": "not an object"
-        }"#;
-
-        let err = Inputs::parse_json(json, None).unwrap_err();
-        assert!(matches!(err, InputError::ExpectedInputsObject));
-    }
-
-    #[test]
-    fn parse_json_error_inputs_is_number() {
-        let json = r#"{
-            "inputs": 42
-        }"#;
-
-        let err = Inputs::parse_json(json, None).unwrap_err();
-        assert!(matches!(err, InputError::ExpectedInputsObject));
-    }
-
-    #[test]
-    fn parse_json_error_empty_json() {
-        let json = r#"{}"#;
-
-        let err = Inputs::parse_json(json, None).unwrap_err();
-        assert!(matches!(err, InputError::JsonParseError(_)));
-    }
-
-    #[test]
-    fn parse_json_error_abi_type_mismatch() {
-        use crate::noir_api::artifacts::load_artifact;
-
-        // hello_world expects x and y as Field types, but we provide an array
-        let artifact = load_artifact("test_vectors/hello_world.json").expect("Load artifact");
-
-        let json = r#"{
-            "inputs": {
-                "x": [1, 2, 3],
-                "y": 2
-            }
-        }"#;
-
-        let err = Inputs::parse_json(json, Some(&artifact.abi)).unwrap_err();
-        assert!(matches!(err, InputError::JsonParseError(_)));
-    }
-
-    #[test]
-    fn as_json_error_param_not_in_abi() {
-        use crate::noir_api::artifacts::load_artifact;
-
-        // hello_world only has x and y parameters
-        let artifact = load_artifact("test_vectors/hello_world.json").expect("Load artifact");
-
-        let inputs = Inputs::new()
-            .add_field("x", 1u64)
-            .add_field("unknown_param", 2u64);
-
-        let err = inputs.as_json(Some(&artifact.abi)).unwrap_err();
-        assert!(matches!(err, InputError::ParameterNotInAbi(name) if name == "unknown_param"));
     }
 }

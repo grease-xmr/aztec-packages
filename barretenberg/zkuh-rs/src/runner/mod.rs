@@ -4,4 +4,7 @@ mod runner;
 pub use bytecode_verification::{
     ByteCodeVerification, DummyByteCodeVerifier, HashByteCodeVerifier,
 };
-pub use runner::{BytecodeError, ExecutionError, ProofRunner, VerificationRunner, RunnerResult, ProofVerificationError};
+pub use runner::{
+    BytecodeError, ExecutionError, ProofRunner, ProofVerificationError, RunnerResult,
+    VerificationRunner,
+};

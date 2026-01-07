@@ -6,11 +6,13 @@ authors = ["CjS77"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
-default = ["prebuild"]
+default = ["prebuild", "json"]
 # Uses prebuilt libraries and bindings.rs for linking
 prebuild = []
 # Build the C++ library from source and generates bindings.rs at build time
 buildlib = []
+cbor = ["ciborium"]
+json = []
 
 [dependencies]
 acir = { version = "1.0.0-beta.15", path = "../../noir/noir-repo/acvm-repo/acir" }
@@ -27,8 +29,8 @@ num-bigint = "0.4"
 rmp-serde = "1.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_bytes = "0.11"
-serde_json = { version = "1.0.145" }
-ciborium = "0.2"
+serde_json = { version = "1.0.145"}
+ciborium = {  version = "0.2", optional = true }
 thiserror = "2.0.17"
 hex = "0.4.3"
 log = "0.4.28"

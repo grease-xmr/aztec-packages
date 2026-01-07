@@ -16,6 +16,8 @@ pub enum InputError {
     JsonParseError(String),
     #[error("CBOR serialization error: {0}")]
     CborSerializeError(String),
+    #[error("MsgPack serialization error: {0}")]
+    MsgpackSerializeError(String),
     #[error("Expected JSON object for 'inputs' field")]
     ExpectedInputsObject,
     #[error("Parameter '{0}' not found in ABI")]
@@ -37,6 +39,9 @@ impl InputError {
             InputError::CborSerializeError(msg) => {
                 InputError::CborSerializeError(format!("{msg} and {}", other.reason()))
             }
+            InputError::MsgpackSerializeError(msg) => {
+                InputError::MsgpackSerializeError(format!("{msg} and {}", other.reason()))
+            }
             InputError::ExpectedInputsObject => InputError::ExpectedInputsObject,
             InputError::ParameterNotInAbi(name) => InputError::ParameterNotInAbi(name.clone()),
         }
@@ -47,6 +52,7 @@ impl InputError {
             InputError::InvalidFieldRepresentation { reason } => reason.as_str(),
             InputError::JsonParseError(msg) => msg.as_str(),
             InputError::CborSerializeError(msg) => msg.as_str(),
+            InputError::MsgpackSerializeError(msg) => msg.as_str(),
             InputError::ExpectedInputsObject => "Expected JSON object for 'inputs' field",
             InputError::ParameterNotInAbi(name) => name.as_str(),
         }
@@ -355,6 +361,59 @@ impl Inputs {
         ciborium::into_writer(&raw, &mut buffer)
             .map_err(|e| InputError::CborSerializeError(e.to_string()))?;
         Ok(buffer)
+    }
+
+    /// Parses MsgPack binary data into `Inputs`.
+    ///
+    /// The MsgPack format must be a map with the following structure (equivalent to the JSON format):
+    /// - "inputs": map of parameter names to values
+    /// - "return_value": optional value
+    ///
+    /// The `inputs` field must be a map where keys are parameter names and values
+    /// can be:
+    /// - Strings (interpreted as field elements - hex with "0x" prefix or decimal)
+    /// - Integers (converted to field elements)
+    /// - Booleans (converted to field elements: true=1, false=0)
+    /// - Arrays (converted to Vec of InputValues)
+    /// - Objects (converted to Struct InputValues)
+    ///
+    /// If an `abi` is provided, the ABI types are used for parsing, which enables
+    /// proper handling of signed integers and type validation. If `abi` is `None`,
+    /// types are inferred from the structure.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InputError` if:
+    /// - The MsgPack data is malformed
+    /// - The root is not a map
+    /// - The `inputs` field is missing or not a map
+    /// - Any value cannot be converted to an InputValue
+    /// - A parameter is not found in the ABI (when ABI is provided)
+    #[cfg(feature = "msgpack")]
+    pub fn parse_msgpack(msgpack_data: &[u8], abi: Option<&Abi>) -> Result<Self, InputError> {
+        let raw: RawInputs = rmp_serde::from_slice(msgpack_data)
+            .map_err(|e| InputError::MsgpackSerializeError(e.to_string()))?;
+        Self::from_raw_inputs(raw, abi)
+    }
+
+    /// Serializes the `Inputs` to MsgPack binary format.
+    ///
+    /// The output structure is equivalent to [`Self::as_json`], containing an "inputs" map
+    /// and an optional "return_value" field, but encoded in MsgPack binary format instead of JSON text.
+    ///
+    /// If an `abi` is provided, the ABI types are used for serialization, which enables
+    /// proper handling of signed integers and booleans. If `abi` is `None`, types are
+    /// inferred from the `InputValue` structure.
+    ///
+    /// # Errors
+    ///
+    /// Returns `InputError` if:
+    /// - A parameter in the inputs is not found in the ABI (when ABI is provided)
+    /// - Any value cannot be converted to MsgPack
+    #[cfg(feature = "msgpack")]
+    pub fn as_msgpack(&self, abi: Option<&Abi>) -> Result<Vec<u8>, InputError> {
+        let raw = self.to_raw_inputs(abi)?;
+        rmp_serde::to_vec_named(&raw).map_err(|e| InputError::MsgpackSerializeError(e.to_string()))
     }
 
     /// Extracts public inputs as a vector of Uint256 in the order defined by the ABI.
@@ -1302,6 +1361,151 @@ mod cbor {
             .as_cbor(Some(&artifact.abi))
             .expect("Failed to serialize");
         let parsed = Inputs::parse_cbor(&cbor, Some(&artifact.abi)).expect("Failed to parse");
+
+        let parsed_map = parsed.as_input_map();
+        expect_value(parsed_map, "x", 1);
+        expect_value(parsed_map, "y", 2);
+    }
+}
+
+#[cfg(all(feature = "msgpack", test))]
+mod msgpack {
+    use crate::noir_api::inputs::test::{expect_return_value, expect_value};
+    use crate::noir_api::Inputs;
+
+    #[test]
+    fn as_msgpack_basic() {
+        let inputs = Inputs::new().add_field("x", 1u64).add_field("y", 42u64);
+
+        let msgpack = inputs
+            .as_msgpack(None)
+            .expect("Failed to serialize to MsgPack");
+        let hex_output = hex::encode(&msgpack);
+
+        // Verify MsgPack output matches expected hex
+        let expected = "81a6696e7075747382a178a430783031a179a430783261";
+        assert_eq!(hex_output, expected);
+
+        // Verify we can decode it back
+        let decoded = hex::decode(expected).expect("Failed to decode hex");
+        assert_eq!(msgpack, decoded);
+    }
+
+    #[test]
+    fn as_msgpack_with_return_value() {
+        let inputs = Inputs::new().add_field("x", 1u64).return_value(123u64);
+
+        let msgpack = inputs
+            .as_msgpack(None)
+            .expect("Failed to serialize to MsgPack");
+        let hex_output = hex::encode(&msgpack);
+
+        // Verify MsgPack output matches expected hex
+        let expected = "82a6696e7075747381a178a430783031ac72657475726e5f76616c7565a430783762";
+        assert_eq!(hex_output, expected);
+
+        // Verify we can decode it back
+        let decoded = hex::decode(expected).expect("Failed to decode hex");
+        assert_eq!(msgpack, decoded);
+    }
+
+    #[test]
+    fn as_msgpack_with_abi() {
+        use crate::noir_api::artifacts::load_artifact;
+
+        let artifact = load_artifact("test_vectors/hello_world.json").expect("Load artifact");
+
+        let inputs = Inputs::new().add_field("x", 1u64).add_field("y", 2u64);
+
+        let msgpack = inputs
+            .as_msgpack(Some(&artifact.abi))
+            .expect("Failed to serialize");
+        let hex_output = hex::encode(&msgpack);
+
+        // Verify MsgPack output matches expected hex
+        let expected = "81a6696e7075747382a178a430783031a179a430783032";
+        assert_eq!(hex_output, expected);
+
+        // Verify we can decode it back
+        let decoded = hex::decode(expected).expect("Failed to decode hex");
+        assert_eq!(msgpack, decoded);
+    }
+
+    #[test]
+    fn parse_msgpack_basic() {
+        let hex_msgpack = "81a6696e7075747382a178a430783031a179a430783261";
+        let msgpack = hex::decode(hex_msgpack).expect("Failed to decode hex");
+
+        let inputs = Inputs::parse_msgpack(&msgpack, None).expect("Failed to parse MsgPack");
+        let map = inputs.as_input_map();
+        assert_eq!(map.len(), 2);
+        expect_value(map, "x", 1);
+        expect_value(map, "y", 42);
+    }
+
+    #[test]
+    fn parse_msgpack_with_return_value() {
+        let hex_msgpack = "82a6696e7075747381a178a430783031ac72657475726e5f76616c7565a430783762";
+        let msgpack = hex::decode(hex_msgpack).expect("Failed to decode hex");
+
+        let inputs = Inputs::parse_msgpack(&msgpack, None).expect("Failed to parse MsgPack");
+        assert_eq!(inputs.as_input_map().len(), 1);
+        expect_return_value(&inputs, 123);
+    }
+
+    #[test]
+    fn parse_msgpack_with_abi() {
+        use crate::noir_api::artifacts::load_artifact;
+
+        let artifact = load_artifact("test_vectors/hello_world.json").expect("Load artifact");
+
+        let hex_msgpack = "81a6696e7075747382a178a430783031a179a430783032";
+        let msgpack = hex::decode(hex_msgpack).expect("Failed to decode hex");
+
+        let inputs =
+            Inputs::parse_msgpack(&msgpack, Some(&artifact.abi)).expect("Failed to parse MsgPack");
+        let map = inputs.as_input_map();
+        assert_eq!(map.len(), 2);
+        expect_value(map, "x", 1);
+        expect_value(map, "y", 2);
+    }
+
+    #[test]
+    fn msgpack_roundtrip_basic() {
+        let original = Inputs::new().add_field("x", 1u64).add_field("y", 42u64);
+
+        let msgpack = original.as_msgpack(None).expect("Failed to serialize");
+        let parsed = Inputs::parse_msgpack(&msgpack, None).expect("Failed to parse");
+
+        let parsed_map = parsed.as_input_map();
+        assert_eq!(parsed_map.len(), 2);
+        expect_value(parsed_map, "x", 1);
+        expect_value(parsed_map, "y", 42);
+    }
+
+    #[test]
+    fn msgpack_roundtrip_with_return_value() {
+        let original = Inputs::new().add_field("x", 1u64).return_value(123u64);
+
+        let msgpack = original.as_msgpack(None).expect("Failed to serialize");
+        let parsed = Inputs::parse_msgpack(&msgpack, None).expect("Failed to parse");
+
+        expect_value(parsed.as_input_map(), "x", 1);
+        expect_return_value(&parsed, 123);
+    }
+
+    #[test]
+    fn msgpack_roundtrip_with_abi() {
+        use crate::noir_api::artifacts::load_artifact;
+
+        let artifact = load_artifact("test_vectors/hello_world.json").expect("Load artifact");
+
+        let original = Inputs::new().add_field("x", 1u64).add_field("y", 2u64);
+
+        let msgpack = original
+            .as_msgpack(Some(&artifact.abi))
+            .expect("Failed to serialize");
+        let parsed = Inputs::parse_msgpack(&msgpack, Some(&artifact.abi)).expect("Failed to parse");
 
         let parsed_map = parsed.as_input_map();
         expect_value(parsed_map, "x", 1);

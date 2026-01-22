@@ -72,6 +72,7 @@ impl ProofVerificationError {
 /// and generate a proof. It supports customizable bytecode verification strategies through the `ByteCodeVerification` trait.
 ///
 /// The verification key can be cached to speed up subsequent proof generations for the same program.
+#[derive(Clone)]
 pub struct ProofRunner<'p, V: ByteCodeVerification = HashByteCodeVerifier<Blake2b512>> {
     /// A checksum for the bytecode being executed. It must have been generated using the algorithm as V.
     checksum: String,

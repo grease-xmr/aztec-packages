@@ -1,7 +1,7 @@
 use blake2::Digest;
 use std::marker::PhantomData;
 
-pub trait ByteCodeVerification: Default {
+pub trait ByteCodeVerification: Default + Clone {
     fn calculate_checksum(&self, _bytecode: &[u8]) -> Vec<u8>;
     fn verify_bytecode(&self, bytecode: &[u8], expected_checksum: impl AsRef<[u8]>) -> bool {
         let calculated_checksum = self.calculate_checksum(bytecode);
@@ -10,7 +10,7 @@ pub trait ByteCodeVerification: Default {
 }
 
 /// A dummy implementation of ByteCodeVerification that always returns true.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct DummyByteCodeVerifier;
 
 impl ByteCodeVerification for DummyByteCodeVerifier {
@@ -27,6 +27,12 @@ impl ByteCodeVerification for DummyByteCodeVerifier {
 #[derive(Default)]
 pub struct HashByteCodeVerifier<D> {
     _digest: PhantomData<D>,
+}
+
+impl<D: Default> Clone for HashByteCodeVerifier<D> {
+    fn clone(&self) -> Self {
+        HashByteCodeVerifier::default()
+    }
 }
 
 impl<D: Digest + Default> ByteCodeVerification for HashByteCodeVerifier<D> {

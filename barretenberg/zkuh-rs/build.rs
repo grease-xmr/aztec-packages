@@ -1,5 +1,5 @@
 use bindgen::Builder;
-use cmake::{build, Config};
+use cmake::{Config};
 use needs_rebuild::{needs_rebuild, ScanOptions};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -333,7 +333,6 @@ fn main() {
         }
         link_libraries(&libs);
         // Copy the hand-crafted bindings file to OUT_DIR
-        let out_bindings = out_dir.join("bindings.rs");
         copy_handcrafted_bindings_to_out(&hardcoded_bindings, &out_dir);
         // Tell Cargo to re-run if the hand-crafted bindings change
         println!("cargo:rerun-if-changed={}", hardcoded_bindings.display());

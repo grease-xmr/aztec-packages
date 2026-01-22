@@ -3,7 +3,6 @@ use crate::barretenberg_api::bindgen::bbapi_cleanup;
 use crate::barretenberg_api::uint256::Uint256;
 use crate::noir_api::artifacts::{load_binary, save_binary};
 use log::*;
-use num_bigint::BigUint;
 use rmp_serde::{decode, encode};
 use serde::{Deserialize, Serialize};
 use std::os::raw::c_void;

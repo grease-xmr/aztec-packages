@@ -676,6 +676,7 @@ impl From<[u8; 32]> for FieldInput {
 pub struct PointInput {
     pub x: FieldElement,
     pub y: FieldElement,
+    pub is_infinite: Option<bool>,
 }
 
 impl PointInput {
@@ -683,18 +684,26 @@ impl PointInput {
         Ok(PointInput {
             x: x.try_into()?.0,
             y: y.try_into()?.0,
+            is_infinite: None,
         })
+    }
+
+    pub fn set_infinity(&mut self, is_infinite: bool) {
+        self.is_infinite = Some(is_infinite);
     }
 }
 
 impl Into<InputValue> for PointInput {
     fn into(self) -> InputValue {
-        let values = [
+        let mut values = vec![
             ("x".to_string(), InputValue::Field(self.x)),
             ("y".to_string(), InputValue::Field(self.y)),
-        ]
-        .into_iter()
-        .collect::<BTreeMap<String, InputValue>>();
+        ];
+        if let Some(is_infinite) = self.is_infinite {
+            let el: FieldElement = (is_infinite as u64).into();
+            values.push(("is_infinite".to_string(), InputValue::Field(el)));
+        }
+        let values = values.into_iter().collect::<BTreeMap<String, InputValue>>();
         InputValue::Struct(values)
     }
 }
@@ -829,12 +838,16 @@ mod test {
 
         let x_bin = "6766328158903275796830164114166065706728391996142987446961316929502416783667"; // convert hex above to decimal
         let y_bin = "19241207056750953839054933711683019584791293159572660626677985726834175880527";
-        let p2 = PointInput::new(x_bin, y_bin).expect("Failed to create point 2");
+        let mut p2 = PointInput::new(x_bin, y_bin).expect("Failed to create point 2");
+        p2.set_infinity(false);
 
         assert_eq!(p1.x, p2.x);
         assert_eq!(p1.y, p2.y);
 
         let val: InputValue = p1.into();
+        assert!(matches!(val, InputValue::Struct(_)));
+
+        let val: InputValue = p2.into();
         assert!(matches!(val, InputValue::Struct(_)));
     }
 

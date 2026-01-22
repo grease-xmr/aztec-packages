@@ -1,5 +1,5 @@
 use bindgen::Builder;
-use cmake::{Config};
+use cmake::Config;
 use needs_rebuild::{needs_rebuild, ScanOptions};
 use std::path::{Path, PathBuf};
 use std::process::Command;

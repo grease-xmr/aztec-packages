@@ -6,7 +6,11 @@ use std::path::Path;
 
 pub fn load_artifact(path: impl AsRef<Path>) -> Result<ProgramArtifact, std::io::Error> {
     let json = std::fs::read_to_string(path)?;
-    serde_json::from_str::<ProgramArtifact>(&json).map_err(|e| {
+    load_artifact_from_string(json)
+}
+
+pub fn load_artifact_from_string(code: impl AsRef<str>) -> Result<ProgramArtifact, std::io::Error> {
+    serde_json::from_str::<ProgramArtifact>(code.as_ref()).map_err(|e| {
         std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             format!("Failed to deserialize ProgramArtifact: {}", e),

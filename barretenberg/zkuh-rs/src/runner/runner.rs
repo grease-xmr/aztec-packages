@@ -193,6 +193,7 @@ impl<'p, V: ByteCodeVerification> ProofRunner<'p, V> {
 /// old or invalid proofs.
 ///
 /// This is done by default in [`VerificationRunner::verify_proof`] if the key is not already cached.
+#[derive(Clone)]
 pub struct VerificationRunner<'p, V: ByteCodeVerification = HashByteCodeVerifier<Blake2b512>> {
     verifier: V,
     /// A checksum for the bytecode being executed.

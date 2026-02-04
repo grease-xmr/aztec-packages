@@ -7,6 +7,8 @@ pub use barretenberg_api::bbapi::{
     CircuitProveResponse, CircuitVerify, CircuitVerifyResponse, ProofSystemSettings,
 };
 
+pub use barretenberg_api::utils::set_logging_enabled;
+
 pub use barretenberg_api::uint256::*;
 
 pub mod circuits {

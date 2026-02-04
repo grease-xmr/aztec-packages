@@ -241,8 +241,6 @@ fn execute_bb_msgpack_command(command: &[u8]) -> (bool, Vec<u8>) {
         let mut out_ptr: *mut u8 = ptr::null_mut();
         let mut out_len: usize = 0;
 
-        bindgen::bbapi_set_verbose_logging(true);
-        bindgen::bbapi_set_debug_logging(log_enabled!(Level::Debug));
         // Definitely don't do this every time. TODO - load CRS once.
         if !bindgen::bbapi_init(null()) {
             panic!("Failed to initialize bbapi");

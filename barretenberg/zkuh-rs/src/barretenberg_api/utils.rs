@@ -1,3 +1,5 @@
+use super::bindgen;
+
 pub trait SerializeBuffer {
     fn to_buffer(&self) -> Vec<u8>;
 }
@@ -23,4 +25,15 @@ impl SerializeBuffer for u8 {
     fn to_buffer(&self) -> Vec<u8> {
         vec![*self]
     }
+}
+
+/// Enable or disable verbose and debug logging in the Barretenberg library.
+///
+/// # Safety
+///
+/// This function modifies global state in the C++ library without synchronization.
+/// It must not be called concurrently with other bbapi calls.
+pub unsafe fn set_logging_enabled(enabled: bool) {
+    bindgen::bbapi_set_verbose_logging(enabled);
+    bindgen::bbapi_set_debug_logging(enabled);
 }
